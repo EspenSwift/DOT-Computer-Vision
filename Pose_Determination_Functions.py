@@ -63,8 +63,8 @@ def ConicFromEllipse(ellipse_params):
     (xc, yc), (MA, ma), angle = ellipse_params
     
     # Semi-axes
-    a = MA #semi-major axis (radius)
-    b = ma #semi-minor axis (radius)
+    a = MA/2 #semi-major axis (radius)
+    b = ma/2 #semi-minor axis (radius)
     
     # Angle in radians (OpenCV gives degrees, convert to radians)
     theta = np.deg2rad(angle)
@@ -82,7 +82,7 @@ def ConicFromEllipse(ellipse_params):
     F = A*xc**2 + B*xc*yc + C*yc**2 - 1
     
 
-    return A, B, C, D, E, F
+    return A, B, C, D, E, F #normalize so F = 1
 
 def SymMatrixFromConic(A, B, C, D, E, F):
     """
@@ -213,7 +213,7 @@ def eigendecomp(Q):
 
     return U, P   
 
-def circle_candidates(U, P, r_norm):
+def circle_candidates(U, P, r_norm, k ,pixel_size_mm):
     """
     Compute candidate circle centers and normals in camera coordinates.
 
@@ -225,7 +225,18 @@ def circle_candidates(U, P, r_norm):
         Diagonal matrix of eigenvalues.
     r_norm : float
         Normalized circle radius (unitless).
-
+    k : ndarray (3,3)
+        Camera intrinsic matrix.
+        k = [[fx, s, cx],
+             [0, fy, cy],
+             [0, 0, 1]]
+        fx: focal length in pixels (x-axis)
+        fy: focal length in pixels (y-axis)
+        s: skew (usually 0)
+        (cx, cy): principal point in pixels
+    pixel_size_mm : float
+        Size of one pixel in mm (pixel pitch).
+        Usually on the order of 0.002 mm / pixel
     Returns
     -------
     candidates : list of dict
@@ -256,6 +267,15 @@ def circle_candidates(U, P, r_norm):
     n1 = U @ n1p
     c2 = U @ c2p
     n2 = U @ n2p
+
+    # Must scale to mm: normal vectors are unitless directional unit vectors so they need not be scaled,
+    # but the centers are in units of normalized focal length, so must be scaled by actual focal length in mm.
+    fx = k[0,0] # focal length in pixels along x-axis
+    fy = k[1,1] # focal length in pixels along y-axis
+    f_px = (fx + fy) / 2.0 # average focal length in pixels
+    
+    c1 = c1 * f_px * pixel_size_mm # convert center from normalized units to mm
+    c2 = c2 * f_px * pixel_size_mm # convert center from normalized units to mm
 
     return [{'center': c1, 'normal': n1},
             {'center': c2, 'normal': n2}]
