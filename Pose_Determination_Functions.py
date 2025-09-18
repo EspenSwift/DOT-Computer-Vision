@@ -1,6 +1,15 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
+# AUTHOER: JAMES MAKHLOUF
+# DATE: 2024-10-15
+# DESCRIPTION: Functions for determining the 3D pose of a circle from its elliptical projection in an image.
+# The functions implement the algorithm from the papers:
+# Miao Xikui et al., “Monocular vision pose measurement based on docking ring component,” Acta Optica Sinica, vol. 33, no. 4, p. 0412006, 2013. doi:10.3788/aos201333.0412006
+# and
+# J. Mu, S. Li, and M. Xin, “Circular-feature-based pose estimation of noncooperative satellite using time-of-flight sensor,” Journal of Guidance, Control, and Dynamics, vol. 47, no. 5, pp. 840–856, May 2024. doi:10.2514/1.g007629 
+
+# FUNCTION DEFINITIONS:
 def normalize_radius(R_mm,k,pixel_size_mm):
     """
     Compute the normalized circle radius (unitless) for use in pose-from-ellipse.
@@ -31,9 +40,9 @@ def normalize_radius(R_mm,k,pixel_size_mm):
     fy = k[1,1] # focal length in pixels along y-axis
     f_px = (fx + fy) / 2.0 # average focal length in pixels
     
-    R_px = R_mm / (f_px * pixel_size_mm) # convert radius from mm to pixels
+    R_norm = R_mm / (f_px * pixel_size_mm) # convert radius from mm to pixels
     
-    return R_px
+    return R_norm
 
 def ConicFromEllipse(ellipse_params):
     """
@@ -82,7 +91,7 @@ def ConicFromEllipse(ellipse_params):
     F = A*xc**2 + B*xc*yc + C*yc**2 - 1
     
 
-    return A, B, C, D, E, F #normalize so F = 1
+    return A, B, C, D, E, F 
 
 def SymMatrixFromConic(A, B, C, D, E, F):
     """
@@ -132,10 +141,10 @@ def normalize_conic(Q_img, K):
     -------
     Q_norm : ndarray (3,3)
         Conic matrix in camera coordinates.
-        Q_norm = (K^-1)transpose * Q_img * (K^-1)
+        Q_norm = (K^-1)transpose * Q_img * (K^-x1)
     """
-    K_inv = np.linalg.inv(K)
-    Q_norm = K_inv.T @ Q_img @ K_inv
+   
+    Q_norm = K.T @ Q_img @ K
 
     return Q_norm
 
