@@ -1,8 +1,7 @@
 import numpy as np
 
 
-
-# AUTHOER: JAMES MAKHLOUF
+# AUTHOR: JAMES MAKHLOUF
 # DATE: 2024-10-15
 # DESCRIPTION: Functions for determining the 3D pose of a circle from its elliptical projection in an image.
 # The functions implement the algorithm from the papers:
