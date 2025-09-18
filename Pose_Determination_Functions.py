@@ -141,7 +141,7 @@ def normalize_conic(Q_img, K):
     -------
     Q_norm : ndarray (3,3)
         Conic matrix in camera coordinates.
-        Q_norm = (K^-1)transpose * Q_img * (K^-x1)
+        Q_norm = (K)^T * Q_img * (K)
     """
    
     Q_norm = K.T @ Q_img @ K
