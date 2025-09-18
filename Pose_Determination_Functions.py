@@ -1,5 +1,6 @@
 import numpy as np
-import matplotlib.pyplot as plt
+
+
 
 # AUTHOER: JAMES MAKHLOUF
 # DATE: 2024-10-15
@@ -141,7 +142,7 @@ def normalize_conic(Q_img, K):
     -------
     Q_norm : ndarray (3,3)
         Conic matrix in camera coordinates.
-        Q_norm = (K)^T * Q_img * (K)
+        Q_norm = K^T * Q_img * (K)
     """
    
     Q_norm = K.T @ Q_img @ K
@@ -286,6 +287,8 @@ def circle_candidates(U, P, r_norm, k ,pixel_size_mm):
     c1 = c1 * f_px * pixel_size_mm # convert center from normalized units to mm
     c2 = c2 * f_px * pixel_size_mm # convert center from normalized units to mm
 
-    return [{'center': c1, 'normal': n1},
-            {'center': c2, 'normal': n2}]
+    Poses = {"Pose1": (c1, n1), "Pose2": (c2, n2)}
+    return Poses
+
+
 
