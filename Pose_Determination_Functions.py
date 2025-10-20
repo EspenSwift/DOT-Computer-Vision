@@ -1,6 +1,5 @@
 import numpy as np
 
-
 # AUTHOR: JAMES MAKHLOUF
 # DATE: 2024-10-15
 # DESCRIPTION: Functions for determining the 3D pose of a circle from its elliptical projection in an image.
@@ -9,7 +8,9 @@ import numpy as np
 # and
 # J. Mu, S. Li, and M. Xin, “Circular-feature-based pose estimation of noncooperative satellite using time-of-flight sensor,” Journal of Guidance, Control, and Dynamics, vol. 47, no. 5, pp. 840–856, May 2024. doi:10.2514/1.g007629 
 
+# Summary:
 # FUNCTION DEFINITIONS:
+
 def normalize_radius(R_mm,k,pixel_size_mm):
     """
     Compute the normalized circle radius (unitless) for use in pose-from-ellipse.
@@ -17,7 +18,7 @@ def normalize_radius(R_mm,k,pixel_size_mm):
     Parameters
     ----------
     R_mm : float
-        Radius of the circle in mm.
+        Radius of the circle in mm
     k : ndarray (3,3)
         Camera intrinsic matrix.
         k = [[fx, s, cx],
@@ -286,8 +287,58 @@ def circle_candidates(U, P, r_norm, k ,pixel_size_mm):
     c1 = c1 * f_px * pixel_size_mm # convert center from normalized units to mm
     c2 = c2 * f_px * pixel_size_mm # convert center from normalized units to mm
 
-    Poses = {"Pose1": (c1, n1), "Pose2": (c2, n2)}
-    return Poses
+    return [(c1, n1), (c2, n2)]
 
 
-
+def Ellipse2Pose(R_mm, k, pixel_size_mm, ellipse_params):
+    """
+    Main function to convert ellipse parameters to candidate circle poses (center and normal) in camera coordinates.
+    
+    Parameters
+    ----------
+    R_mm : float
+        Radius of the circle in mm
+    k : ndarray (3,3)
+        Camera intrinsic matrix.
+        k = [[fx, s, cx],
+             [0, fy, cy],
+             [0, 0, 1]]
+        fx: focal length in pixels (x-axis)
+        fy: focal length in pixels (y-axis)
+        s: skew (usually 0)
+        (cx, cy): principal point in pixels
+    pixel_size_mm : float
+        Size of one pixel in mm (pixel pitch).
+        Usually on the order of 0.002 mm / pixel
+    ellipse_params : tuple
+        ((xc, yc), (MA, ma), angle)
+        from cv2.fitEllipse
+    
+    Returns
+    -------
+    candidates : list of dict
+        Each dict has 'center' and 'normal' in camera coords.
+        Candidates = [{'center': c1, 'normal': n1},
+                      {'center': c2, 'normal': n2}]
+    where c1, c2 are (3x1) circle centers and n1, n2 are (3x1) plane normals corresponding to the two possible poses.
+    Each pose is expressed in camera coordinates.
+    """
+    # --- Convert ellipse parameters to conic coefficients ---
+    A, B, C, D, E, F = ConicFromEllipse(ellipse_params)
+    
+    # --- Construct symmetric conic matrix ---
+    Q_img = SymMatrixFromConic(A, B, C, D, E, F)
+    
+    # --- Normalize conic to camera coordinates ---
+    Q_norm = normalize_conic(Q_img, k)
+    
+    # --- Eigen-decomposition of normalized conic ---
+    U, P = eigendecomp(Q_norm) # U are normalized eigenvectoers, P is diagonal matrix of eigenvalues
+    
+    # --- Normalize radius ---
+    r_norm = normalize_radius(R_mm, k, pixel_size_mm) # normalize radius in pixels
+    
+    # --- Compute candidate poses ---
+    candidates = circle_candidates(U, P, r_norm, k, pixel_size_mm)
+    
+    return candidates
