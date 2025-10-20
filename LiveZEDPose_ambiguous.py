@@ -1,16 +1,27 @@
 import cv2
 import numpy as np
 import pyzed.sl as sl
-import math
+import time
 from Pose_Determination_Functions import *
 import csv
 
-# Camera Parameters:
+# ==========================================================
+#                 SYSTEM CONFIGURATION
+# ==========================================================
+cv2.setNumThreads(0)
+cv2.ocl.setUseOpenCL(True)
+print("OpenCL available:", cv2.ocl.haveOpenCL())
+print("OpenCL enabled:", cv2.ocl.useOpenCL())
+
+# ==========================================================
+#                 OUTPUT FILE (optional) - set to None to disable saving
+# ==========================================================
+
 FPS = 15  # set the framerate
 pixel_size_mm_zed = 0.002
 
 # Data Output Parameters
-out_file = '/Users/jamesmakhlouf/Desktop/UNIVERSITY/YEAR 4/Fall 2025/MAAE 4907/MAAE 4907 Q/Test Datasets/James Test (LAR) Sept 29/Pose_Determination_output.csv'
+output_path = r"C:\Users\espen\Documents\Projects\ComputerVision\Simulation\Camping\test.csv"
 header = [
     "Time [s]",
     "Pose1_Rx", "Pose1_Ry", "Pose1_Rz",
@@ -21,20 +32,32 @@ header = [
 
 Pose_output = []  # store pose outputs
 
-# Image Processing Parameters
-MAX_TRIALS = 100
-INLIER_THRESHOLD = 0.15
-ROUNDNESS_PREF = 0.6
-MIN_MAJOR_AXIS_FRAC = 0.2
-CANNY_LOW = 40
-CANNY_HIGH = 120
-MIN_POINTS = 30
-MIN_AREA = 2000
-VOTE_FRACTION = 0.5
+# ==========================================================
+#                 RANSAC PARAMETERS (copied from your script)
+# ==========================================================
+max_trials = 100
+inlier_threshold = 3
+min_inliers = 0.6
+min_major_axis_frac = 0.15
+roundness_preference = 0.7   # 1 = perfect circle preference, 0 = ignore roundness
+vote_frac = 0.5
 
-RADIUS = 150  # mm, radius of target circle
+RADIUS = 150
 
+# ==========================================================
+#                 IMAGE PREPROCESSING PARAMETERS
+# ==========================================================
+clahe_clip_limit = 3.0
+clahe_tile_grid = (16, 16)
+median_blur_ksize = 17
+edge_thresh1 = 130
+edge_thresh2 = 180
+threshold_value = 200
+otsu_enabled = True
 
+# ==========================================================
+#                 RANSAC FUNCTION (kept same behaviour)
+# ==========================================================
 def ransac_fit_ellipse(points, max_trials, inlier_threshold,
                        frame_height=None, min_major_axis_frac=0.2,
                        roundness_preference=0.5,
@@ -106,82 +129,108 @@ def ransac_fit_ellipse(points, max_trials, inlier_threshold,
     return best_ellipse
 
 
-def preprocess_frame(frame_bgr):
+# ==========================================================
+#                 START ZED CAMERA
+# ==========================================================
+init_params = sl.InitParameters()
+init_params.camera_resolution = sl.RESOLUTION.HD720  # match your previous
+init_params.camera_fps = 15
+zed = sl.Camera()
+if zed.open(init_params) != sl.ERROR_CODE.SUCCESS:
+    raise RuntimeError("Failed to open ZED camera. Check connection and SDK installation.")
+
+# Get camera intrinsics (if you later want to use them)
+cam_info = zed.get_camera_information()
+calib = cam_info.camera_configuration.calibration_parameters
+left = calib.left_cam
+
+K_left = np.array([
+    [left.fx, 0.0, left.cx],
+    [0.0, left.fy, left.cy],
+    [0.0, 0.0, 1.0]
+], dtype=float)
+
+# Setup runtime and Mat for frames
+runtime = sl.RuntimeParameters()
+frame_zed = sl.Mat()
+
+# Prepare CLAHE and optionally the VideoWriter
+clahe = cv2.createCLAHE(clipLimit=clahe_clip_limit, tileGridSize=clahe_tile_grid)
+writer = None
+frame_count = 0
+start_time = time.time()
+
+# grab one frame to get size / FPS for writer
+if zed.grab(runtime) == sl.ERROR_CODE.SUCCESS:
+    zed.retrieve_image(frame_zed, sl.VIEW.LEFT)
+    # ZED returns BGRA (4-ch); convert to BGR for OpenCV processing
+    frame_bgra = frame_zed.get_data()
+    frame_bgr = cv2.cvtColor(frame_bgra, cv2.COLOR_BGRA2BGR)
+    h, w = frame_bgr.shape[:2]
+    zed_fps = init_params.camera_fps
+    if output_path:
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        writer = cv2.VideoWriter(output_path, fourcc, zed_fps, (w, h))
+else:
+    zed.close()
+    raise RuntimeError("Couldn't read initial frame from ZED.")
+
+print("Running live ZED processing. Press 'q' to quit.")
+
+# ==========================================================
+#                 MAIN LOOP - same processing pipeline
+# ==========================================================
+frames = 0
+while True:
+    if zed.grab(runtime) != sl.ERROR_CODE.SUCCESS:
+        # skip if frame not ready
+        if cv2.waitKey(1) & 0xFF == ord('q'): # kill
+            break
+        continue
+    frames += 1
+    zed.retrieve_image(frame_zed, sl.VIEW.LEFT)
+    frame_bgra = frame_zed.get_data()
+
+    frame_bgr = cv2.cvtColor(frame_bgra, cv2.COLOR_BGRA2BGR)
+
     gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
-    blur = cv2.bilateralFilter(gray, 9, 75, 75)
-    grad_x = cv2.Sobel(blur, cv2.CV_64F, 1, 0, ksize=5)
-    grad_y = cv2.Sobel(blur, cv2.CV_64F, 0, 1, ksize=5)
-    mag = cv2.magnitude(grad_x, grad_y)
-    mag = np.uint8(np.clip(mag, 0, 255))
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-    mag = clahe.apply(mag)
-    edges = cv2.Canny(mag, CANNY_LOW, CANNY_HIGH)
-    kernel = np.ones((3, 3), np.uint8)
-    edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel)
-    edges = cv2.morphologyEx(edges, cv2.MORPH_OPEN, kernel)
-    return edges
 
+    median = cv2.medianBlur(gray, median_blur_ksize)
+    clahe_img = clahe.apply(median)
 
-def detect_ellipse(frame_bgr):
-    edges = preprocess_frame(frame_bgr)
-    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    best_ellipse = None
-    best_area = 0
+    edges = cv2.Canny(clahe_img, edge_thresh1, edge_thresh2)
 
-    for cnt in contours:
-        if len(cnt) < MIN_POINTS:
-            continue
-        area = cv2.contourArea(cnt)
-        if area < MIN_AREA:
-            continue
+    if otsu_enabled:
+        _, thresh = cv2.threshold(clahe_img, threshold_value, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    else:
+        _, thresh = cv2.threshold(clahe_img, threshold_value, 255, cv2.THRESH_BINARY)
 
-        ellipse = ransac_fit_ellipse(
-            cnt, MAX_TRIALS, INLIER_THRESHOLD,
-            frame_height=frame_bgr.shape[0],
-            min_major_axis_frac=MIN_MAJOR_AXIS_FRAC,
-            roundness_preference=ROUNDNESS_PREF,
-            vote_fraction=VOTE_FRACTION)
-        if ellipse is not None and area > best_area:
-            best_ellipse = ellipse
-            best_area = area
+    # Find contours using CHAIN_APPROX_NONE exactly as your reference
+    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    ellipse = None
 
-    return best_ellipse, edges
+    if contours:
+        circular_candidates = []
+        for c in contours:
+            area = cv2.contourArea(c)
+            if area < 200:
+                continue
+            perimeter = cv2.arcLength(c, True)
+            if perimeter == 0:
+                continue
+            circularity = 4 * np.pi * area / (perimeter ** 2)
+            if circularity > 0.5:
+                circular_candidates.append(c)
 
+        if circular_candidates:
+            largest = max(circular_candidates, key=cv2.contourArea)
+            if len(largest) >= 5:
+                ellipse = ransac_fit_ellipse(
+                    largest, max_trials, inlier_threshold,
+                    h, min_major_axis_frac,
+                    roundness_preference=roundness_preference, vote_fraction=vote_frac)
 
-def main():
-    init_params = sl.InitParameters()
-    init_params.camera_resolution = sl.RESOLUTION.HD720
-    init_params.camera_fps = FPS
-    zed = sl.Camera()
-
-    if zed.open(init_params) != sl.ERROR_CODE.SUCCESS:
-        print("Failed to open ZED camera.")
-        return
-
-    cam_info = zed.get_camera_information()
-    calib = cam_info.camera_configuration.calibration_parameters
-    left = calib.left_cam
-
-    K_left = np.array([
-        [left.fx, 0.0, left.cx],
-        [0.0, left.fy, left.cy],
-        [0.0, 0.0, 1.0]
-    ], dtype=float)
-
-    runtime = sl.RuntimeParameters()
-    frame_zed = sl.Mat()
-    frames = 0
-
-    while True:
-        if zed.grab(runtime) == sl.ERROR_CODE.SUCCESS:
-            zed.retrieve_image(frame_zed, sl.VIEW.LEFT)
-            frame_rgba = frame_zed.get_data()
-            frame_bgr = cv2.cvtColor(frame_rgba, cv2.COLOR_BGRA2BGR)
-
-            ellipse, edges = detect_ellipse(frame_bgr)
-            frames += 1
-
-            if ellipse is not None:
+    if ellipse is not None:
                 (x, y), (a, b), angle = ellipse
                 if a < b:
                     axes = (b, a)
@@ -196,35 +245,43 @@ def main():
                     *candidates[0][0], *candidates[0][1],
                     *candidates[1][0], *candidates[1][1]
                 ])
-            else:
-                Pose_output.append([frames / FPS] + [0] * 12)
+    else:
+        Pose_output.append([frames / FPS] + [0] * 12)
+    print(f" Pose 1 Translation [Tx, Ty, Tz]: {np.round(candidates[0][1], 3)}")
+    # Convert threshold image to BGR for drawing & saving (exactly like reference)
+    output = cv2.cvtColor(thresh, cv2.COLOR_GRAY2BGR)
 
-            display = frame_bgr.copy()
-            if ellipse is not None:
-                cv2.ellipse(display, ellipse, (0, 255, 0), 2)
-                cx, cy = map(int, ellipse[0])
-                cv2.circle(display, (cx, cy), 4, (0, 0, 255), -1)
+    # Draw ellipse (on threshold output), same color / thickness
+    if ellipse is not None:
+        # cv2.ellipse expects ((cx,cy),(MA,ma),angle)
+        cv2.ellipse(output, ellipse, (0, 255, 0), 2)
 
-            mask_rgb = cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
-            preview = cv2.resize(mask_rgb, (int(display.shape[1] * 0.25), int(display.shape[0] * 0.25)))
-            display[0:preview.shape[0], 0:preview.shape[1]] = preview
-
-            cv2.imshow("ZED Live Ellipse Detection", display)
-
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
-
-    zed.close()
-    cv2.destroyAllWindows()
-
-    # --- Write results to CSV once done ---
-    with open(out_file, mode="w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(header)
-        writer.writerows(Pose_output)
-
-    print(f"\nPose data written to {out_file}")
+    # Show window and optionally save
+    cv2.imshow("RANSAC Circular Fit - ZED Live", output)
+    if writer is not None:
+        writer.write(output)
 
 
-if __name__ == "__main__":
-    main()
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+# cleanup
+if writer is not None:
+    writer.release()
+zed.close()
+cv2.destroyAllWindows()
+
+# --- Write results to CSV once done ---
+
+with open(output_path, mode="w", newline="") as f:
+    writer = csv.writer(f)
+    writer.writerow(header)
+    writer.writerows(Pose_output)
+
+print(f"\nPose data written to {output_path}")
+
+
+elapsed = time.time() - start_time
+print(f"Frames processed: {frame_count}, elapsed {elapsed:.2f}s, approx FPS {frame_count/elapsed:.2f}")
+if output_path:
+    print(f"Saved output video to: {output_path}")
