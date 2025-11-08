@@ -197,9 +197,15 @@ try:
         # Save raw footage if enabled
         if raw_writer is not None:
             raw_writer.write(frame_bgr)
+        try:
+            candidates, ellipse = Pose_estimation_from_frame(frame_bgr, R_INNER, R_OUTTER, INNER_OUTTER_OFFSET, K_left, pixel_size_mm_zed)
+            print(candidates)
+        except Exception as e:
+            print(f"Error in pose estimation: {e}")
+            candidates = [((0,0,0),(0,0,0)),((0,0,0),(0,0,0))]  # dummy candidates when error occurs
+            ellipse = None
 
-        candidates, ellipse = Pose_estimation_from_frame(frame_bgr, R_INNER, R_OUTTER, INNER_OUTTER_OFFSET, K_left, pixel_size_mm_zed)
-        print(candidates)
+
         # Store pose data for both candidates
         Pose_output.append([
             frames / FPS,
@@ -270,6 +276,12 @@ try:
 
         # Draw ellipse (on threshold output), same color / thickness
         if ellipse is not None:
+            (cx, cy), (MA, ma), angle = ellipse
+            cx = 2*cx
+            cy = 2*cy
+            MA = 2*MA
+            ma = 2*ma
+            #ellipse = ((cx, cy), (MA, ma), angle)
             # cv2.ellipse expects ((cx,cy),(MA,ma),angle)
             cv2.ellipse(output, ellipse, (0, 255, 0), 2)
 

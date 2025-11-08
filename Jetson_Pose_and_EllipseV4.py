@@ -176,9 +176,9 @@ def Pose_estimation_from_frame(frame_bgr, R_INNER, R_OUTTER, INNER_OUTTER_OFFSET
     height, width, _ = downsampled.shape
 
     # Calculate downsampled k:
-    K[:2, :] /= SCALE
+    #K[:2, :] /= SCALE
     
-    pixel_size_mm_zed = pixel_size_mm_zed*2
+    #pixel_size_mm_zed = pixel_size_mm_zed*2
     # Gold mask (to remove MLI from edge detection)
     # Kernel size and iterations are for morphological closing of the gold mask
     gold_mask = get_gold_mask(downsampled, kernel_size=5, iterations=3)
@@ -249,6 +249,9 @@ def Pose_estimation_from_frame(frame_bgr, R_INNER, R_OUTTER, INNER_OUTTER_OFFSET
     # --------------------------------------------------
     morph_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
     morph_clean = cv2.morphologyEx(adaptive_mask, cv2.MORPH_CLOSE, morph_kernel, iterations=2)
+
+    # BRING BACK TO ORIGINAL RESOLUTION
+    morph_clean = cv2.resize(morph_clean, (frame_bgr.shape[1], frame_bgr.shape[0]), interpolation=cv2.INTER_NEAREST)
 
     # --------------------------------------------------
     # 8. Edge detection
@@ -367,10 +370,11 @@ def Pose_estimation_from_frame(frame_bgr, R_INNER, R_OUTTER, INNER_OUTTER_OFFSET
 
                     # Pose estimation
                     candidates = Ellipse2Pose(R_mm, K, pixel_size_mm_zed, ellipse)
-                    C1,C2 = candidates[0][0], candidates[1][0]
-                    N1, N2 = candidates[0][1], candidates[1][1]
-                    C1 = (C1[0], C1[1], C1[2] + INNER_OUTTER_OFFSET)
-                    C2 = (C2[0], C2[1], C2[2] + INNER_OUTTER_OFFSET)
+                    if candidates is not None:
+                        C1,C2 = candidates[0][0], candidates[1][0]
+                        N1, N2 = candidates[0][1], candidates[1][1]
+                        C1 = (C1[0], C1[1], C1[2] - INNER_OUTTER_OFFSET)
+                        C2 = (C2[0], C2[1], C2[2] - INNER_OUTTER_OFFSET)
 
                     candidates = [(C1,N1), (C2,N2)]
 
