@@ -4,6 +4,7 @@ import pyzed.sl as sl
 import time
 from EllipseFittingFunctions import *
 from PoseDeterminationFunctions import *
+from determine_direction_facing import direction_facing
 #from Ellipse_Pose_Ambient import *
 import csv
 import socket
@@ -106,6 +107,9 @@ raw_footage_path = os.path.join(new_dir, f"{test_name}_RAW_FOOTAGE.mp4")
 print("CSV Output Path:", csv_output_path)
 print("Processed Video Path:", vid_path)
 print("Raw Footage Path:", raw_footage_path)
+
+# Initial orientation unknown
+orientation_known = False
 
 
 # ==========================================================
@@ -250,6 +254,45 @@ try:
         Pose_output.append([current_time-start_time, *candidates[0][0], *candidates[0][1], *candidates[1][0], *candidates[1][1]])
         print(candidates)
 
+        
+        # Espen's fallback pose disambiguation
+        if not orientation_known:
+            direction = direction_facing(frame_bgr)
+            print(direction)
+            n1, n2 = candidates[0][1], candidates[1][1]
+            # Sanity check
+            if n1[0]*n2[0] > 0:
+                print("something is fishy...")
+            else:
+                direction_labels = []
+                for i in [0, 1]:
+                    n = candidates[i][1]
+                    if n[0] > 0:
+                        direction_labels[i].append("right")
+                    if n[0] < 0:
+                        direction_labels[i].append("right")
+                # Select correct facing based on the facing script thing
+                selected_idx = None
+                for i, d in enumerate(direction_labels):
+                    if d == direction:
+                        selected_idx = i
+                        break
+                selected_center = candidates[i][0]
+                selected_normal = candidates[i][0]
+                orientation_known = True
+        # Use previous normal
+        else:
+            u_n1 = n1/np.linalg.norm(n1)
+            u_n2 = n1/np.linalg.norm(n2)
+            nang1 = np.arccos(np.clip(np.dot(u_n1, selected_normal), -1.0, 1.0))
+            nang2 = np.arccos(np.clip(np.dot(u_n2, selected_normal), -1.0, 1.0))
+            if nang1 < nang2:
+                selected_normal = n1
+                selected_center = candidates[0][0]
+            if nang2 < nang1:
+                selected_normal = n2
+                selected_center = candidates[1][0]
+        
         # Save raw footage if enabled
         if raw_writer is not None:
             raw_writer.write(frame_bgr)
