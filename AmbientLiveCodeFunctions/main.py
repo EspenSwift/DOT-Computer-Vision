@@ -256,7 +256,8 @@ try:
 
         
         # Espen's fallback pose disambiguation
-        if not orientation_known:
+        if not orientation_known and (candidates ~=[((0,0,0),(0,0,0)),((0,0,0),(0,0,0))]):
+            # Only call if orientation is unknown, AND there was an actual candidate pose detected
             direction = direction_facing(frame_bgr)
             print(direction)
             n1, n2 = candidates[0][1], candidates[1][1]
@@ -304,7 +305,7 @@ try:
         try:
             # Send Tx, Tz, Rz for Pose 1
 
-            # Tx: distance between camera optical scenter and LAR center along x in the camera frame (mm)
+            # Tx: distance between camera optical center and LAR center along x in the camera frame (mm)
             # Tz: distance between camera optical center and LAR center along z in the camera frame (mm)
             # Rz: cosine of the angle between camera optical axis and normal to LAR plane around z axis in camera frame
 
