@@ -294,7 +294,7 @@ def EllipseFromFrame(frame, fps, frame_idx, last_detection_frame, kf, kf_initial
 
     GATE_DIST = 200  # px
 
-    gold_contour = None
+    gold_contours = None
     ellipse = None
     max_contour = None
 
@@ -427,6 +427,7 @@ def EllipseFromFrame(frame, fps, frame_idx, last_detection_frame, kf, kf_initial
         max_contour = max(gold_contours, key=cv2.contourArea)
     else:
         max_contour = None
+        ellipse = None
 
     
     if max_contour is not None:
