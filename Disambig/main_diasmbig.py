@@ -331,6 +331,8 @@ try:
             data = bytearray(struct.pack("fff", Tx, Tz, Rz))
             sock.sendto(data, server_address)
 
+            print(f"[POSE] Frame {frames} | Using Pose {idx} | Tx={Tx:.2f}, Tz={Tz:.2f}, Rz={Rz:.3f}")
+
         except Exception as e:
             print("Error sending UDP data:", e)
             break
