@@ -4,8 +4,9 @@ import pyzed.sl as sl
 import time
 from EllipseFittingFunctions import *
 from PoseDeterminationFunctions import *
-from determine_direction_facing import direction_facing
+#from determine_direction_facing import direction_facing
 #from Ellipse_Pose_Ambient import *
+from disambiguate_consistent_stream import choose_best_stream
 import csv
 import socket
 import struct
@@ -109,7 +110,7 @@ print("Processed Video Path:", vid_path)
 print("Raw Footage Path:", raw_footage_path)
 
 # Initial orientation unknown
-orientation_known = False
+#orientation_known = False
 
 
 # ==========================================================
@@ -205,6 +206,21 @@ kf = create_kalman(dt)
 kf_initialized = False
 last_detection_frame = -9999
 
+# ==========================================================
+#       POSE STREAM DISAMBIGUATION (CONSISTENT STREAM)
+# ==========================================================
+
+STREAM_WINDOW_STEPS = 200   # number of steps for consistency scoring
+STREAM_TAU_R        = 0.2   # mm, min |ΔRx| to count a step
+STREAM_TAU_T        = 1e-3  # min |ΔTx| (direction cosine) to count a step
+STREAM_SMOOTH       = 3     # moving-average window
+
+stream_selector_ready = False
+best_stream_idx       = 0   # default to Pose1 until we know better
+
+# Buffers for warm-up phase (first N frames)
+Rx1_buf, Tx1_buf = [], []
+Rx2_buf, Tx2_buf = [], []
 
 # ==========================================================
 #       MAIN LOOP - Ellipse Detection and Pose Estimation
@@ -254,105 +270,70 @@ try:
         Pose_output.append([current_time-start_time, *candidates[0][0], *candidates[0][1], *candidates[1][0], *candidates[1][1]])
         print(candidates)
 
-        
-        # Espen's fallback pose disambiguation
-        if not orientation_known and (candidates ~=[((0,0,0),(0,0,0)),((0,0,0),(0,0,0))]):
-            # Only call if orientation is unknown, AND there was an actual candidate pose detected
-            direction = direction_facing(frame_bgr)
-            print(direction)
-            n1, n2 = candidates[0][1], candidates[1][1]
-            # Sanity check
-            if n1[0]*n2[0] > 0:
-                print("something is fishy...")
-            else:
-                direction_labels = []
-                for i in [0, 1]:
-                    n = candidates[i][1]
-                    if n[0] > 0:
-                        direction_labels[i].append("right")
-                    if n[0] < 0:
-                        direction_labels[i].append("right")
-                # Select correct facing based on the facing script thing
-                selected_idx = None
-                for i, d in enumerate(direction_labels):
-                    if d == direction:
-                        selected_idx = i
-                        break
-                selected_center = candidates[i][0]
-                selected_normal = candidates[i][0]
-                orientation_known = True
-        # Use previous normal
-        else:
-            u_n1 = n1/np.linalg.norm(n1)
-            u_n2 = n1/np.linalg.norm(n2)
-            nang1 = np.arccos(np.clip(np.dot(u_n1, selected_normal), -1.0, 1.0))
-            nang2 = np.arccos(np.clip(np.dot(u_n2, selected_normal), -1.0, 1.0))
-            if nang1 < nang2:
-                selected_normal = n1
-                selected_center = candidates[0][0]
-            if nang2 < nang1:
-                selected_normal = n2
-                selected_center = candidates[1][0]
-        
+        # ------------------------------------------------------
+        # STREAM CONSISTENCY WARM-UP / SELECTION
+        # ------------------------------------------------------
+        # Only use frames where we actually have a non-zero candidate
+        # (avoid dummy [((0,0,0),(0,0,0)),((0,0,0),(0,0,0))] frames)
+        if not stream_selector_ready:
+            # Check if candidates look non-dummy
+            if candidates != [((0,0,0),(0,0,0)), ((0,0,0),(0,0,0))]:
+                # Pose solver format: candidates[i] = (center, normal)
+                # center = (Rx, Ry, Rz), normal = (Tx, Ty, Tz)
+                Rx1_buf.append(candidates[0][0][0])  # Pose1 center x
+                Tx1_buf.append(candidates[0][1][0])  # Pose1 normal x
+                Rx2_buf.append(candidates[1][0][0])  # Pose2 center x
+                Tx2_buf.append(candidates[1][1][0])  # Pose2 normal x
+
+                # Need at least window_steps+1 frames to have window_steps Δ steps
+                if len(Rx1_buf) >= STREAM_WINDOW_STEPS + 1:
+                    best_stream_idx, metrics = choose_best_stream(
+                        Rx1=np.array(Rx1_buf),
+                        Tx1=np.array(Tx1_buf),
+                        Rx2=np.array(Rx2_buf),
+                        Tx2=np.array(Tx2_buf),
+                        tau_R=STREAM_TAU_R,
+                        tau_T=STREAM_TAU_T,
+                        window_steps=STREAM_WINDOW_STEPS,
+                        smooth=STREAM_SMOOTH,
+                    )
+                    stream_selector_ready = True
+
+                    print("\n[stream selector] Chosen stream index:", best_stream_idx)
+                    print("[stream selector] Metrics:")
+                    print("  Stream 1:", metrics["stream1"])
+                    print("  Stream 2:", metrics["stream2"])
+
+
         # Save raw footage if enabled
         if raw_writer is not None:
             raw_writer.write(frame_bgr)
 
-        # SEND CORRECT POSE CANDIDATE TO SIMULINK:
-
-
-
+        # ------------------------------------------------------
+        # SEND CORRECT POSE CANDIDATE TO SIMULINK (USING YOUR METHOD)
+        # ------------------------------------------------------
         try:
-            # Send Tx, Tz, Rz for Pose 1
+            # If stream selector is ready, use chosen stream; else fallback to Pose1
+            if stream_selector_ready:
+                idx = best_stream_idx
+            else:
+                idx = 0
 
-            # Tx: distance between camera optical center and LAR center along x in the camera frame (mm)
-            # Tz: distance between camera optical center and LAR center along z in the camera frame (mm)
-            # Rz: cosine of the angle between camera optical axis and normal to LAR plane around z axis in camera frame
+            # candidates[idx][0] = (Rx, Ry, Rz)
+            # candidates[idx][1] = (Tx, Ty, Tz)  <-- normal vector
+            center = candidates[idx][0]
+            normal = candidates[idx][1]
 
-            # To convert to intertial frame of reference, the following transformations are needed:
-            # First rotate Tx, Tz to the chaser inertial frame, which is given by the following matrix:
-            #| 0  0  1 |
-            #| -1 0  0 |
+            Tx = center[0]   # x component of center in camera frame (mm)
+            Tz = center[2]   # z component of center in camera frame (mm)
+            Rz = normal[2]   # z component of normal (cos angle wrt camera optical axis)
 
-            # Next, GNC must convert from the chaser frame to the intertial lab reference frame, which is given by a principal rotation about the Z axis using the angle of the chaser:
-            #| cos(theta) -sin(theta) 0 |
-            #| sin(theta)  cos(theta) 0 |
-
-            # Rz = cos(thetaz) -> to get the angle between the camera optical axis and normal to LAR plane around z axis in camera frame, take arccos(Rz)
-            # Since camera optical Z axis is aligned with chaser Z axis, the angle between chaser Z axis and normal to LAR plane around z axis in camera frame is also thetaz
-
-
-            # This is temporary - senging only the first pose for testing
-            # Later, integrate with pose disabiguation logic to select correct pose, then send that one.
-            Tx = candidates[0][0][0] # Tx: distance between camera optical scenter and LAR center along x in the camera frame (mm)
-            Tz = candidates[0][0][2] # Tz: distance between camera optical center and LAR center along z in the camera frame (mm)
-            Rz = candidates[0][1][2] # Rz: cosine of the angle between camera optical axis and normal to LAR plane around z axis in camera frame
-
-
-            data = bytearray(struct.pack("fff", Tx, Tz, Rz))  # Tx, Tz, cos(thetaZ) # Add time later
+            data = bytearray(struct.pack("fff", Tx, Tz, Rz))
             sock.sendto(data, server_address)
-            
-            #print("Data sent!:")
+
         except Exception as e:
-            print(e)
+            print("Error sending UDP data:", e)
             break
-
-
-        #print(str(candidates[0][0][0]), str(candidates[0][0][2]), str(candidates[0][1][2]))  
-        #print(f" Pose 1 Translation [Tx, Ty, Tz]: {np.round(candidates[0][1], 3)}")
-        # Convert threshold image to BGR for drawing & saving (exactly like reference)
-        output = frame_bgr
-
-        # Draw ellipse (on threshold output), same color / thickness
-        if ellipse is not None:
-
-            cv2.ellipse(output, ellipse, (0, 0, 255), 4)
-
-        # Show window and optionally save
-        # Toggle comment on next line to show live window
-        #cv2.imshow("RANSAC Circular Fit - ZED Live", output)
-        if writer is not None:
-            writer.write(output)
 
 except KeyboardInterrupt:
     print("Interrupted by user, stopping...")
