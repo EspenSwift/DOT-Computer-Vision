@@ -210,7 +210,7 @@ last_detection_frame = -9999
 #       POSE STREAM DISAMBIGUATION (CONSISTENT STREAM)
 # ==========================================================
 
-STREAM_WINDOW_STEPS = 200   # number of steps for consistency scoring
+STREAM_WINDOW_STEPS = 20   # number of steps for consistency scoring
 STREAM_TAU_R        = 0.2   # mm, min |ΔRx| to count a step
 STREAM_TAU_T        = 1e-3  # min |ΔTx| (direction cosine) to count a step
 STREAM_SMOOTH       = 3     # moving-average window
@@ -221,6 +221,25 @@ best_stream_idx       = 0   # default to Pose1 until we know better
 # Buffers for warm-up phase (first N frames)
 Rx1_buf, Tx1_buf = [], []
 Rx2_buf, Tx2_buf = [], []
+
+#=========================================================
+# Helper function for disambiguation
+#=========================================================
+def candidates_are_dummy(candidates):
+    """
+    Return True if both pose candidates are (0,0,0) for center and normal.
+    Works whether they are tuples or numpy arrays.
+    """
+    try:
+        (c1, n1), (c2, n2) = candidates
+    except Exception:
+        return True  # super defensive: if it's malformed, treat as dummy
+
+    return (
+        np.allclose(c1, 0) and np.allclose(n1, 0) and
+        np.allclose(c2, 0) and np.allclose(n2, 0)
+    )
+
 
 # ==========================================================
 #       MAIN LOOP - Ellipse Detection and Pose Estimation
@@ -276,16 +295,14 @@ try:
         # Only use frames where we actually have a non-zero candidate
         # (avoid dummy [((0,0,0),(0,0,0)),((0,0,0),(0,0,0))] frames)
         if not stream_selector_ready:
-            # Check if candidates look non-dummy
-            if candidates != [((0,0,0),(0,0,0)), ((0,0,0),(0,0,0))]:
+            # Only use frames where we actually have a *real* pose (not all zeros)
+            if not candidates_are_dummy(candidates):
                 # Pose solver format: candidates[i] = (center, normal)
-                # center = (Rx, Ry, Rz), normal = (Tx, Ty, Tz)
                 Rx1_buf.append(candidates[0][0][0])  # Pose1 center x
                 Tx1_buf.append(candidates[0][1][0])  # Pose1 normal x
                 Rx2_buf.append(candidates[1][0][0])  # Pose2 center x
                 Tx2_buf.append(candidates[1][1][0])  # Pose2 normal x
 
-                # Need at least window_steps+1 frames to have window_steps Δ steps
                 if len(Rx1_buf) >= STREAM_WINDOW_STEPS + 1:
                     best_stream_idx, metrics = choose_best_stream(
                         Rx1=np.array(Rx1_buf),
@@ -305,12 +322,13 @@ try:
                     print("  Stream 2:", metrics["stream2"])
 
 
+
         # Save raw footage if enabled
         if raw_writer is not None:
             raw_writer.write(frame_bgr)
 
         # ------------------------------------------------------
-        # SEND CORRECT POSE CANDIDATE TO SIMULINK (USING YOUR METHOD)
+        # SEND CORRECT POSE CANDIDATE TO SIMULINK
         # ------------------------------------------------------
         try:
             # If stream selector is ready, use chosen stream; else fallback to Pose1
