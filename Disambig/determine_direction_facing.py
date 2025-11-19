@@ -1,83 +1,77 @@
-import cv2
-import numpy as np
+import cv2, numpy as np
+from pathlib import Path
 
 def determine_facing(img):
+
     h, w = img.shape[:2]
 
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    blur = cv2.GaussianBlur(gray, (7,7), 0)
-    th = cv2.adaptiveThreshold(blur, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-                               cv2.THRESH_BINARY_INV, 51, 9)
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (7,7))
-    closed = cv2.morphologyEx(th, cv2.MORPH_CLOSE, kernel, iterations=2)
+    # -------------------------
+    # 1. GOLD HSV MASK
+    # -------------------------
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
 
-    contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    contours = sorted(contours, key=cv2.contourArea, reverse=True)
+    lower_gold = np.array([10, 80, 80])     # H,S,V
+    upper_gold = np.array([35, 255, 255])
 
-    box_poly = None
-    for cnt in contours[:10]:
-        if cv2.contourArea(cnt) < 1000:
-            continue
-        peri = cv2.arcLength(cnt, True)
-        approx = cv2.approxPolyDP(cnt, 0.02*peri, True)
-        if len(approx) == 4:
-            box_poly = approx.reshape(4,2)
-            break
-    if box_poly is None and contours:
-        box_poly = cv2.approxPolyDP(
-            contours[0],
-            0.02 * cv2.arcLength(contours[0], True),
-            True
-        ).reshape(-1, 2)
+    gold_mask = cv2.inRange(hsv, lower_gold, upper_gold)
 
-    def order_by_y(points):
-        pts = sorted(points.tolist(), key=lambda p: (p[1], p[0]))
-        return np.array(pts, dtype=np.float32)
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
+    gold_mask = cv2.morphologyEx(gold_mask, cv2.MORPH_CLOSE, kernel, iterations=2)
 
-    slope = None
+    cnts, _ = cv2.findContours(gold_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if len(cnts) == 0:
+        return "No gold target found", None, None
 
-    if box_poly is not None and len(box_poly) >= 3:
-        ordered = order_by_y(box_poly)
-        p1 = ordered[-1]
-        p2 = ordered[-2]
-        dx = p2[0] - p1[0]
-        dy = p2[1] - p1[1]
-        slope = float('inf') if abs(dx) < 1e-6 else dy / dx
-    else:
-        lower = gray[int(h*0.45):, :]
-        edges = cv2.Canny(lower, 50, 150, apertureSize=3)
-        lines = cv2.HoughLinesP(edges, 1, np.pi/180, threshold=40,
-                                minLineLength=int(w*0.2), maxLineGap=20)
-        if lines is not None:
-            best = None
-            best_score = 1e9
-            for l in lines:
-                x1, y1, x2, y2 = l[0]
-                y1 += int(h*0.45)
-                y2 += int(h*0.45)
-                dx = x2 - x1
-                dy = y2 - y1
-                ang = abs(np.arctan2(dy, dx)) if dx != 0 else np.pi/2
-                avg_y = (y1 + y2) / 2
-                score = ang - 0.002 * avg_y
-                if score < best_score:
-                    best_score = score
-                    best = (x1, y1, x2, y2)
-            if best:
-                x1, y1, x2, y2 = best
-                dx = x2 - x1
-                dy = y2 - y1
-                slope = float('inf') if abs(dx) < 1e-6 else dy / dx
+    cnt = max(cnts, key=cv2.contourArea)
+    mask_filled = np.zeros_like(gold_mask)
+    cv2.drawContours(mask_filled, [cnt], -1, 255, -1)
 
-    # Interpret result
-    if slope is None:
-        return "unknown"
-    threshold = 0.15
+    # -------------------------
+    # 2. Polygon Approximation of Gold Region
+    # -------------------------
+    peri = cv2.arcLength(cnt, True)
+    approx = cv2.approxPolyDP(cnt, 0.015 * peri, True)
+    poly = approx.reshape(-1, 2)
+
+    poly_sorted = sorted(poly.tolist(), key=lambda p: (p[1], p[0]))
+
+    bottom_valid = []
+    for (x, y) in poly_sorted:
+        if y < h * 0.92:  
+            bottom_valid.append((x, y))
+
+    if len(bottom_valid) < 2:
+        bottom_valid = poly_sorted[:]
+
+    if len(bottom_valid) < 2:
+        return "Not enough polygon points", None, None
+
+    p1 = np.array(bottom_valid[-1], dtype=np.float32)
+    p2 = np.array(bottom_valid[-2], dtype=np.float32)
+
+    # -------------------------
+    # 3. Compute slope
+    # -------------------------
+    dx = p2[0] - p1[0]
+    dy = p2[1] - p1[1]
+    slope = float('inf') if abs(dx) < 1e-6 else dy / dx
+
+    # -------------------------
+    # 4. Determine facing
+    # -------------------------
+
+    horizontal_thresh = 0.02  
+
     if slope == float('inf'):
-        return "level" # brother this stinks
-    elif slope < -threshold:
-        return "right"
-    elif slope > threshold:
-        return "left"
+        result_text = "Vertical — ambiguous"
+
+    elif abs(slope) < horizontal_thresh:
+        result_text = f"horizontal"
+
+    elif slope < 0:
+        result_text = f"RIGHT"
+
     else:
-        return "level"
+        result_text = f"LEFT"
+
+    return result_text, slope
