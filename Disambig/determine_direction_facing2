@@ -1,0 +1,93 @@
+import cv2, numpy as np
+
+def determine_facing(img, ellipse):
+    h, w = img.shape[:2]
+
+    # -------------------------
+    # 0. Ellipse center
+    # -------------------------
+    (cx, cy), (MA, ma), angle = ellipse  # cv2.fitEllipse format
+
+    # -------------------------
+    # 1. GOLD HSV MASK
+    # -------------------------
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+
+    lower_gold = np.array([10, 80, 80])
+    upper_gold = np.array([35, 255, 255])
+    gold_mask = cv2.inRange(hsv, lower_gold, upper_gold)
+
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
+    gold_mask = cv2.morphologyEx(gold_mask, cv2.MORPH_CLOSE, kernel, iterations=2)
+
+    cnts, _ = cv2.findContours(gold_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if len(cnts) == 0:
+        return "No gold target found", None
+
+    cnt = max(cnts, key=cv2.contourArea)
+
+    # -------------------------
+    # 2. Polygon Approximation
+    # -------------------------
+    peri = cv2.arcLength(cnt, True)
+    approx = cv2.approxPolyDP(cnt, 0.015 * peri, True)
+    poly = approx.reshape(-1, 2)
+
+    # Sort polygon points by y (vertical), then x
+    poly_sorted = sorted(poly.tolist(), key=lambda p: (p[1], p[0]))
+
+    # Pick candidate "bottom" polygon points
+    bottom_valid = [tuple(p) for p in poly_sorted if p[1] < h * 0.92]
+    if len(bottom_valid) < 2:
+        bottom_valid = poly_sorted[:]  # fallback
+
+    if len(bottom_valid) < 2:
+        return "Not enough polygon points", None
+
+    # -------------------------
+    # 3. Build list of candidate bottom edges
+    # -------------------------
+    edges = []
+    # edges are consecutive pairs in sorted list
+    for i in range(len(bottom_valid)-1):
+        p1 = np.array(bottom_valid[i], dtype=np.float32)
+        p2 = np.array(bottom_valid[i+1], dtype=np.float32)
+        edges.append((p1, p2))
+
+    # -------------------------
+    # 4. Select the edge closest to the ellipse center
+    # -------------------------
+    cxcy = np.array([cx, cy], dtype=np.float32)
+
+    def edge_distance_to_center(edge):
+        mid = 0.5 * (edge[0] + edge[1])
+        return np.linalg.norm(mid - cxcy)
+
+    chosen_edge = min(edges, key=edge_distance_to_center)
+    p1, p2 = chosen_edge
+
+    # -------------------------
+    # 5. Compute slope of horizontal base segment
+    # -------------------------
+    dx = float(p2[0] - p1[0])
+    dy = float(p2[1] - p1[1])
+    slope = float('inf') if abs(dx) < 1e-6 else dy / dx
+
+    # -------------------------
+    # 6. Determine facing
+    # -------------------------
+    horizontal_thresh = 0.02
+
+    if slope == float('inf'):
+        result_text = "Vertical — ambiguous"
+
+    elif abs(slope) < horizontal_thresh:
+        result_text = "horizontal"
+
+    elif slope < 0:
+        result_text = "RIGHT"
+
+    else:
+        result_text = "LEFT"
+
+    return result_text, slope
