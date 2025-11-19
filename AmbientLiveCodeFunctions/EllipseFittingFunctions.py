@@ -60,7 +60,7 @@ def reject_circle_border_contours(contours, cx, cy, R_mask, threshold=2, min_are
         ratio_on_border = np.sum(near_edge) / len(near_edge)
 
         # Reject if more than 50% lie on the circle edge
-        if ratio_on_border > 0.2:
+        if ratio_on_border > 0.5:
             continue
 
         valid.append(cnt)
@@ -359,10 +359,30 @@ def EllipseFromFrame(frame, fps, frame_idx, last_detection_frame, kf, kf_initial
     cv2.circle(mask, (kx, ky), int(0.95*kr), 255, -1)  # filled circle
     masked_frame = cv2.bitwise_and(frame, frame, mask=mask)
 
-    gold_mask = get_gold_mask(masked_frame,kernel_size = 3, iterations = 3)
+    ## CURRENTLY FITITNG TO THE ENTIRE FRAME'S GOLD PIXELS!
+    gold_mask = get_gold_mask(frame,kernel_size = 3, iterations = 3)
     morph_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
     gold_mask = cv2.morphologyEx(gold_mask, cv2.MORPH_OPEN, morph_kernel, iterations=1)
 
+
+    # 1) Count all valid pixels inside the masked region
+    valid_pixels = np.count_nonzero(mask)
+
+    # 2) Count gold pixels ONLY inside that region
+    gold_pixels = np.count_nonzero(gold_mask[mask == 255])
+
+    # 3) Percent gold
+    gold_ratio = gold_pixels / valid_pixels if valid_pixels > 0 else 0
+        
+    if gold_ratio > .75:
+        mask = np.zeros_like(frame[:,:,0], dtype=np.uint8)
+        cv2.circle(mask, (kx, ky), int(2*kr), 255, -1)  # filled circle
+        masked_frame = cv2.bitwise_and(frame, frame, mask=mask)
+        gold_mask = get_gold_mask(masked_frame,kernel_size = 3, iterations = 3)
+        morph_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        gold_mask = cv2.morphologyEx(gold_mask, cv2.MORPH_OPEN, morph_kernel, iterations=1)
+
+    
     
     ## ADAPTIVE THRESH MASK:
     """
@@ -421,7 +441,7 @@ def EllipseFromFrame(frame, fps, frame_idx, last_detection_frame, kf, kf_initial
 
     # Reject contours that lie on the circular mask boundary
     R_mask = int(0.95 * kr)    # or 0.85*kr depending on mask
-    gold_contours = reject_circle_border_contours(gold_contours, kx, ky, R_mask, threshold=2, min_area =MIN_CONTOUR_AREA)
+    #gold_contours = reject_circle_border_contours(gold_contours, kx, ky, R_mask, threshold=2, min_area =MIN_CONTOUR_AREA)
 
     if gold_contours:
         max_contour = max(gold_contours, key=cv2.contourArea)
