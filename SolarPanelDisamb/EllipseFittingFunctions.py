@@ -217,7 +217,8 @@ def detect_panel_lines(frame):
                 # Reject nearly vertical lines
                 if 45 <= angle <= 135:
                     continue
-
+                if -45 >= angle >= -135:
+                    continue
                 # Compute slope
                 if abs(dx) > 1e-6:
                     m = dy / dx
@@ -226,6 +227,7 @@ def detect_panel_lines(frame):
     # Compute MEAN SLOPE of remaining lines
     # -----------------------------------
     slopes = [item for item in slopes if item !=0.0]
+    slopes = [s for s in slopes if abs(s) < 0.3]
     if len(slopes) > 0:
         mean_slope = float(np.mean(slopes))
     else:
