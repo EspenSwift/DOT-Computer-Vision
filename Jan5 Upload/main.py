@@ -326,13 +326,18 @@ try:
                         chosen = candidates[np.argmin([abs(Tx1), abs(Tx2)])]
 
 
-        else:
-            # straight case (slope ambiguous or ellipse invalid)
+        elif ellipse is not None and Tx_positive is None:
+            # straight case (slope ambiguous)
             print("Straight")
             Tz1 = candidates[0][1][2]
             Tz2 = candidates[1][1][2]
-            
+
+            # Selects most aligned pose based on which normal has a greater z-component
             chosen = candidates[np.argmax([abs(Tz1), abs(Tz2)])]
+
+        elif is ellipse is None:
+            print("No ellipse detected")
+            prev_Tx = None
 
         # ---------------------------------------
         # At the end of each iteration:
