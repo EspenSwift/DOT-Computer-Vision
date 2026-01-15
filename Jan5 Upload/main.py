@@ -60,13 +60,13 @@ RANSAC_INLIER_THRESHOLD = 5
 #                 CAMERA PARAMETERS
 # ==========================================================
 
-FPS = 8
+FPS = 10
 pixel_size_mm_zed = 0.002 # pixel size for ZED at pix/mm
 
 # ==========================================================
 #                 DATA WRITING OPTIONS
 # ==========================================================
-TARGET_HZ = 5
+TARGET_HZ = 9  # Target frequency to write data to CSV and send to Simulink
 
 header = [
     "Time [s]",
@@ -92,8 +92,9 @@ base_dir = "/home/spot-vision/Documents/Capstone_CV_2025/"
 
 # Prompt user for test name
 test_name = input("Please enter the test name: ")
-
+write_videos = input("Do you want to write videos? (y/n): ").strip().lower() == 'y'
 print("You entered:", test_name)
+print("Write videos:", write_videos)
 
 # Create the new test directory
 new_dir = os.path.join(base_dir, test_name)
@@ -152,9 +153,13 @@ if zed.open(init_params) != sl.ERROR_CODE.SUCCESS:
 
 
 # Disable auto exposure
+#UNCOMMENT TO CONTROL EXPOSURE MANUALLY
+'''
 zed.set_camera_settings(sl.VIDEO_SETTINGS.EXPOSURE, 60)   # 0–100
 zed.set_camera_settings(sl.VIDEO_SETTINGS.GAIN, 60)       # usually set with exposure
 zed.set_camera_settings(sl.VIDEO_SETTINGS.AEC_AGC, 0)     # disable auto exposure/gain
+'''
+
 
 # Get camera intrinsics 
 cam_info = zed.get_camera_information()
@@ -370,7 +375,7 @@ try:
              Pose_output.append([prev_time-start_time, *candidates[0][0], *candidates[0][1], *candidates[1][0], *candidates[1][1], 0,0,0, 0,0,0, 0])
              send_flag = 0
         # Save raw footage if enabled
-        if raw_writer is not None:
+        if raw_writer is not None and write_videos:
             raw_writer.write(frame_bgr)
 
         if send_flag == 1:
@@ -419,14 +424,14 @@ try:
     output = frame_bgr
 
     # Draw ellipse (on threshold output), same color / thickness
-    if ellipse is not None:
+    if ellipse is not None and write_videos:
 
         cv2.ellipse(output, ellipse, (0, 0, 255), 4)
 
     # Show window and optionally save
     # Toggle comment on next line to show live window
     #cv2.imshow("RANSAC Circular Fit - ZED Live", output)
-    if writer is not None:
+    if writer is not None and write_videos:
         writer.write(output)
 
 except KeyboardInterrupt:
@@ -434,9 +439,9 @@ except KeyboardInterrupt:
 
 
 # cleanup
-if writer is not None:
+if writer is not None and write_videos:
     writer.release()
-if raw_writer is not None:
+if raw_writer is not None and write_videos:
     raw_writer.release()    
 zed.close()
 cv2.destroyAllWindows()
@@ -459,7 +464,7 @@ print(f"\nPose data written to {csv_output_path}")
 
 elapsed = time.time() - start_time
 print(f"Frames processed: {frames}, elapsed {elapsed:.2f}s, approx FPS {frames/elapsed:.2f}")
-if vid_path:
+if vid_path and write_videos:
     print(f"Saved processed video to: {vid_path}")
-if raw_footage_path:
+if raw_footage_path and write_videos:
     print(f"Saved raw footage to: {raw_footage_path}")
