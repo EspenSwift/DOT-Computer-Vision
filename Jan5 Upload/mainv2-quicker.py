@@ -297,7 +297,7 @@ try:
             candidates = [((0,0,0),(0,0,0)), ((0,0,0),(0,0,0))]
 
         # ----------------------------------
-        # Pose disambiguation (UNCHANGED)
+        # Pose disambiguation
         # ----------------------------------
         if ellipse is not None and mean_slope is not None:
             if mean_slope > 0.02:
