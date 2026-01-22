@@ -256,6 +256,7 @@ try:
         frames += 1
         current_time = time.time()
 
+        # Pose disambiguation resets every frame
         mean_slope = None
         Tx_positive = None
         chosen = None
@@ -349,13 +350,15 @@ try:
             use_roi = False
             roi = None
             last_pose = None
+            prev_Tx = None
             last_send_flag = 0
             last_pose_time = current_time
 
         # ----------------------------------
         # OUTPUT CLOCK (TARGET_HZ)
         # ----------------------------------
-        if (current_time - last_output_time) >= (1.0 / TARGET_HZ):
+        if (current_time - last_output_time) < (1.0 / TARGET_HZ):
+            time.sleep(1/TARGET_HZ - (current_time - last_output_time))
             last_output_time = current_time
 
             if last_pose is not None:
