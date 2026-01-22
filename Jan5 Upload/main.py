@@ -60,13 +60,13 @@ RANSAC_INLIER_THRESHOLD = 5
 #                 CAMERA PARAMETERS
 # ==========================================================
 
-FPS = 10
+FPS = 8
 pixel_size_mm_zed = 0.002 # pixel size for ZED at pix/mm
 
 # ==========================================================
 #                 DATA WRITING OPTIONS
 # ==========================================================
-TARGET_HZ = 9  # Target frequency to write data to CSV and send to Simulink
+TARGET_HZ = 5  # Target frequency to write data to CSV and send to Simulink
 
 header = [
     "Time [s]",
@@ -154,6 +154,8 @@ if zed.open(init_params) != sl.ERROR_CODE.SUCCESS:
 
 # Disable auto exposure
 #UNCOMMENT TO CONTROL EXPOSURE MANUALLY
+
+# 40 exposure and works well with 50% intensity lighting
 '''
 zed.set_camera_settings(sl.VIDEO_SETTINGS.EXPOSURE, 60)   # 0–100
 zed.set_camera_settings(sl.VIDEO_SETTINGS.GAIN, 60)       # usually set with exposure
@@ -258,6 +260,7 @@ try:
            candidates=[((0,0,0),(0,0,0)),((0,0,0),(0,0,0))]  # dummy candidates when no ellipse found           
         
         # Detect mean solar panel slope lines from frame
+        # mean slope in component form based on the trigonometric relationship 
         mean_slope = detect_panel_lines(frame_bgr)
 
         # Determine correct pose from direction
@@ -367,9 +370,11 @@ try:
             prev_Tx_history.append(chosen[1][0])
             send_flag = 1
             Rx = chosen[1][0] # Rx: normal vector component in the inertial x direction
-            Rz = chosen[1][2] # Rz: normal vector component in the inertial x direction
-            theta_tc = np.atan2(Rx, Rz) # relative angle, radians
-
+            Rz = chosen[1][2] # Rz: normal vector component in the inertial y direction
+            theta_tc = np.atan2(Rx, -Rz) + np.pi  # theta_tc: relative angle, radians
+            print(theta_tc)
+            theta_deg = np.rad2deg(theta_tc)
+            #print(theta_deg)
             Pose_output.append([prev_time-start_time, *candidates[0][0], *candidates[0][1], *candidates[1][0], *candidates[1][1], *chosen[0], *chosen[1], theta_tc])
         else:
              Pose_output.append([prev_time-start_time, *candidates[0][0], *candidates[0][1], *candidates[1][0], *candidates[1][1], 0,0,0, 0,0,0, 0])
