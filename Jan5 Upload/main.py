@@ -220,7 +220,7 @@ print(f"Frame size: {w}x{h}, FPS: {zed_fps}")
 # initialize EPOCH - right before we gegin grabbing frames for ellipse detection
 start_time = time.time()
 frames = 0
-chosen  = None
+
 prev_time = 0
 prev_Tx = None
 prev_Tx_history = deque(maxlen=5)
@@ -234,7 +234,9 @@ try:
         # increment frame count
         current_time = time.time()
         frames += 1
-
+        chosen  = None
+        Tx_positive = None
+        send_flag = 0
         # Retrieve left image
         zed.retrieve_image(frame_zed, sl.VIEW.LEFT)
         frame_bgra = frame_zed.get_data()
@@ -267,7 +269,7 @@ try:
         # ---------------------------------------------------
         # Determine sign of Tx based on slope
         # ---------------------------------------------------
-        Tx_positive = None
+  
         if ellipse is not None:
             if mean_slope is not None:
                 if mean_slope > 0.02:
@@ -355,42 +357,48 @@ try:
         elif ellipse is None:
             print("No ellipse detected")
             prev_Tx = None
+            chosen = None
 
         # ---------------------------------------
         # At the end of each iteration:
-        if chosen is not None:
-            current_time = time.time()
-            
-            if (current_time - prev_time) < (1/TARGET_HZ):
-                time.sleep(1/TARGET_HZ- (current_time-prev_time))
 
-            # Set previous time for the next readout to be equal to the time of the current readout    
-            prev_time = time.time()
+
+        if chosen is not None:
+            send_flag = 1
             prev_Tx = chosen[1][0]
             prev_Tx_history.append(chosen[1][0])
-            send_flag = 1
             Rx = chosen[1][0] # Rx: normal vector component in the inertial x direction
             Rz = chosen[1][2] # Rz: normal vector component in the inertial y direction
             theta_tc = np.atan2(Rx, -Rz) + np.pi  # theta_tc: relative angle, radians
-            print(theta_tc)
-            theta_deg = np.rad2deg(theta_tc)
-            #print(theta_deg)
+            #print(theta_tc)
+            Tx = chosen[0][0]/1000# Tx: distance between camera optical scenter and LAR center along x in the camera frame (m) - corresponds to y direction in relaive space
+            Tz = chosen[0][2]/1000 # Tz: distance between camera optical center and LAR center along z in the camera frame (m) - corresponds to x direction in relative space
+
+            # Append to Pose output
             Pose_output.append([prev_time-start_time, *candidates[0][0], *candidates[0][1], *candidates[1][0], *candidates[1][1], *chosen[0], *chosen[1], theta_tc])
         else:
-             Pose_output.append([prev_time-start_time, *candidates[0][0], *candidates[0][1], *candidates[1][0], *candidates[1][1], 0,0,0, 0,0,0, 0])
-             send_flag = 0
+            Pose_output.append([prev_time-start_time, *candidates[0][0], *candidates[0][1], *candidates[1][0], *candidates[1][1], 0,0,0, 0,0,0, 0])
+            send_flag = 0
+            # send dummy numbers
+            Tx, Tz, theta_tc = 0,0,0 
         # Save raw footage if enabled
         if raw_writer is not None and write_videos:
             raw_writer.write(frame_bgr)
 
-        if send_flag == 1:
-            Tx = chosen[0][0]/1000# Tx: distance between camera optical scenter and LAR center along x in the camera frame (m) - corresponds to y direction in relaive space
-            Tz = chosen[0][2]/1000 # Tz: distance between camera optical center and LAR center along z in the camera frame (m) - corresponds to x direction in relative space
-        # SEND CORRECT POSE CANDIDATE TO SIMULINK:
-        else:
-            Tx = 0
-            Tz = 0
-            theta_tc = 0
+
+
+        # Update current time
+        current_time = time.time()
+        
+        # SLEEP CODE TO MAINTAIN TARGET HZ
+        if (current_time - prev_time) < (1/TARGET_HZ):
+            time.sleep(1/TARGET_HZ- (current_time-prev_time))
+        # SLEEP CODE TO MAINTAIN TARGET HZ END
+
+
+        # Set previous time for the next readout to be equal to the time of the current readout    
+        prev_time = time.time()
+        # Send data to Simulink
         try:
             # Send Tx, Tz, Rz for Pose 1
 
@@ -426,17 +434,12 @@ try:
     #print(str(candidates[0][0][0]), str(candidates[0][0][2]), str(candidates[0][1][2]))  
     #print(f" Pose 1 Translation [Tx, Ty, Tz]: {np.round(candidates[0][1], 3)}")
     # Convert threshold image to BGR for drawing & saving (exactly like reference)
-    output = frame_bgr
+    
 
     # Draw ellipse (on threshold output), same color / thickness
-    if ellipse is not None and write_videos:
-
+    if write_videos and ellipse is not None and writer is not None:
+        output = frame_bgr.copy()
         cv2.ellipse(output, ellipse, (0, 0, 255), 4)
-
-    # Show window and optionally save
-    # Toggle comment on next line to show live window
-    #cv2.imshow("RANSAC Circular Fit - ZED Live", output)
-    if writer is not None and write_videos:
         writer.write(output)
 
 except KeyboardInterrupt:
