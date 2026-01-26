@@ -307,7 +307,7 @@ try:
                     # The bottom half predicts the next pose solely based on the last pose - taking the most consistent
                     '''
                     Tx_pred = predict_next_Tx_constant_velocity(prev_Tx_history)
-                    print(Tx_pred,Tx1,Tx2)
+                    #print(Tx_pred,Tx1,Tx2)
 
                     # Compare how close each candidate's Tx is to predicted Tx
                     chosen = candidates[
@@ -320,7 +320,7 @@ try:
                         chosen = candidates[np.argmin([abs(Tx1), abs(Tx2)])]
 
             else:
-                print("looking LEFT")
+                #print("looking LEFT")
                 if Tx1 <= 0 and Tx2 > 0:
                     chosen = candidates[0]
                 elif Tx2 <= 0 and Tx1 > 0:
@@ -332,7 +332,7 @@ try:
                     # The bottom half predicts the next pose solely based on the last pose - taking the most consistent
                     '''
                     Tx_pred = predict_next_Tx_constant_velocity(prev_Tx_history)
-                    print(Tx_pred,Tx1,Tx2)
+                    #print(Tx_pred,Tx1,Tx2)
 
                     # Compare how close each candidate's Tx is to predicted Tx
                     chosen = candidates[
@@ -347,7 +347,7 @@ try:
 
         elif ellipse is not None and Tx_positive is None:
             # straight case (slope ambiguous)
-            print("Straight")
+            #print("Straight")
             Tz1 = candidates[0][1][2]
             Tz2 = candidates[1][1][2]
 
@@ -355,7 +355,7 @@ try:
             chosen = candidates[np.argmax([abs(Tz1), abs(Tz2)])]
 
         elif ellipse is None:
-            print("No ellipse detected")
+            #print("No ellipse detected")
             prev_Tx = None
             chosen = None
 
@@ -424,6 +424,7 @@ try:
             
             data = bytearray(struct.pack("ffff", send_flag, Tz, Tx, theta_tc))  # Tx, Tz, relative angle in radians # Add time later
             sock.sendto(data, server_address)
+            print(send_flag, Tz, Tx, theta_tc)
 
         #print("Data sent!:")
         except Exception as e:
