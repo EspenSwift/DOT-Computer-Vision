@@ -203,7 +203,7 @@ if zed.grab(runtime) == sl.ERROR_CODE.SUCCESS:
     zed_fps = init_params.camera_fps # get fps
     if vid_path:
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        writer = cv2.VideoWriter(vid_path, fourcc, zed_fps, (w, h))
+        writer = cv2.VideoWriter(vid_path, fourcc, FPS, (w, h))
         raw_writer = cv2.VideoWriter(raw_footage_path, fourcc, FPS, (w, h))
 else:
     zed.close()
@@ -294,7 +294,7 @@ try:
             #print(Tx1, Tz1, Tx2, Tz2)
 
             if Tx_positive:
-                print("looking RIGHT")
+                #print("looking RIGHT")
                 if Tx1 >= 0 and Tx2 < 0:
                     chosen = candidates[0]
                 elif Tx2 >= 0 and Tx1 < 0:
@@ -382,9 +382,19 @@ try:
             # send dummy numbers
             Tx, Tz, theta_tc = 0,0,0 
         # Save raw footage if enabled
+
+
+        ###############################         
+        # Save raw footage if enabled
+        ###############################
+
+
         if raw_writer is not None and write_videos:
             raw_writer.write(frame_bgr)
-
+            output = frame_bgr.copy()
+            if ellipse is not None and write_videos:
+                cv2.ellipse(output, ellipse, (0, 0, 255), 4)
+            writer.write(output)
 
 
         # Update current time
@@ -394,7 +404,7 @@ try:
         if (current_time - prev_time) < (1/TARGET_HZ):
             time.sleep(1/TARGET_HZ- (current_time-prev_time))
         # SLEEP CODE TO MAINTAIN TARGET HZ END
-
+        
 
         # Set previous time for the next readout to be equal to the time of the current readout    
         prev_time = time.time()
@@ -421,10 +431,17 @@ try:
 
             # This is temporary - senging only the first pose for testing
             # Later, integrate with pose disabiguation logic to select correct pose, then send that one.
-            
+
+
+            # Round before sending
+            Tz = round(Tz, 5)
+            Tx = round(Tx, 5)
+            theta_tc = round(theta_tc, 5)
+
+            # Send data 
             data = bytearray(struct.pack("ffff", send_flag, Tz, Tx, theta_tc))  # Tx, Tz, relative angle in radians # Add time later
             sock.sendto(data, server_address)
-            print(send_flag, Tz, Tx, theta_tc)
+            #print(send_flag)
 
         #print("Data sent!:")
         except Exception as e:
@@ -437,11 +454,7 @@ try:
     # Convert threshold image to BGR for drawing & saving (exactly like reference)
     
 
-    # Draw ellipse (on threshold output), same color / thickness
-    if write_videos and ellipse is not None and writer is not None:
-        output = frame_bgr.copy()
-        cv2.ellipse(output, ellipse, (0, 0, 255), 4)
-        writer.write(output)
+
 
 except KeyboardInterrupt:
     print("Interrupted by user, stopping...")
