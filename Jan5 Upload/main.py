@@ -43,7 +43,7 @@ cv2.ocl.setUseOpenCL(True)
 
 # Using this technique, only targeting the inner circle
 R_MM = 90.0 #mm
-MIN_CONTOUR_AREA = 2000
+MIN_CONTOUR_AREA = 1900
 MIN_CONTOUR_LENGTH = 50
 MIN_CONTOUR_POINTS = 50
 
