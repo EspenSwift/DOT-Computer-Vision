@@ -180,8 +180,6 @@ print(K_left)
 
 # Setup runtime and Mat for frames
 runtime = sl.RuntimeParameters()
-runtime.enable_depth = False              # depth off = less pipeline latency
-
 frame_zed = sl.Mat()
 
 
@@ -228,24 +226,19 @@ prev_Tx = None
 prev_Tx_history = deque(maxlen=5)
 try:    
     while True:
-        # Block until at least one frame is available
         if zed.grab(runtime) != sl.ERROR_CODE.SUCCESS:
+            # skip if frame not ready
+            if cv2.waitKey(1) & 0xFF == ord('q'): # kill
+                break
             continue
-        
-        # Drain any extra queued frames
-        while zed.grab(runtime) == sl.ERROR_CODE.SUCCESS:
-            pass
-        
-        # Retrieve newest frame
-        zed.retrieve_image(frame_zed, sl.VIEW.LEFT)
-
         # increment frame count
         current_time = time.time()
         frames += 1
         chosen  = None
         Tx_positive = None
         send_flag = 0
-        
+        # Retrieve left image
+        zed.retrieve_image(frame_zed, sl.VIEW.LEFT)
         frame_bgra = frame_zed.get_data()
 
 
