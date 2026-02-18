@@ -7,7 +7,7 @@ from PoseDeterminationFunctions import *
 import csv
 import socket
 import struct
-import os
+import osx
 from collections import deque
 
 
@@ -221,6 +221,7 @@ print(f"Frame size: {w}x{h}, FPS: {zed_fps}")
 start_time = time.time()
 frames = 0
 
+prev_max_area = 0
 prev_time = 0
 prev_Tx = None
 prev_Tx_history = deque(maxlen=5)
@@ -246,7 +247,7 @@ try:
         frame_bgr = cv2.cvtColor(frame_bgra, cv2.COLOR_BGRA2BGR)
 
         # Calculate ellipse from current frame
-        ellipse = EllipseFromFrame(frame_bgr)
+        ellipse, prev_max_area = EllipseFromFrame(frame_bgr, prev_max_area)
 
         if ellipse is not None:
             # Compute two pose candidates based on this ellipse
