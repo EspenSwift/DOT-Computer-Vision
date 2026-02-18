@@ -303,13 +303,14 @@ def detect_panel_lines(frame):
 #======================================================
 #                 ELLIPSE FROM FRAME
 # ==========================================================
-def EllipseFromFrame(frame_bgr):
+def EllipseFromFrame(frame_bgr, prev_max_area):
     # Get gold mask
     gold_mask = get_gold_mask(frame_bgr, kernel_size=7, iterations=3)
 
 
     # Detect circle
-    outer_circle, crop_offset = detect_outer_circle(frame_bgr)
+    if prev_max_area < MIN_AREA_HOUGH_CIRCLE:
+        outer_circle, crop_offset = detect_outer_circle(frame_bgr)
     if outer_circle is not None:
         cx, cy, r = map(int, outer_circle)       
         # Build circular mask
@@ -325,17 +326,18 @@ def EllipseFromFrame(frame_bgr):
 
     if gold_contours:
         max_contour = max(gold_contours, key=cv2.contourArea)
+        prev_max_area = cv2.contourArea(max_contour)
 
     else:
         max_contour = None
-
+        prev_max_area = 0
     
     if max_contour is not None:
         ellipse, best_inliers, best_mse, std_dev, AR, inlier_frac = ransac_fit_ellipse_traditional(max_contour,RANSAC_MAX_TRIALS,CONVERGENCE_TRIALS,RANSAC_INLIER_THRESHOLD)
 
         if ellipse is not None and (AR < MAX_AR) and inlier_frac > MIN_INLIER_FRAC:
-            return ellipse
+            return ellipse, prev_max_area
         else:
-            return None
+            return None, 0
     else:
-        return None
+        return None, 0
