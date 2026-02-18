@@ -7,7 +7,7 @@ from PoseDeterminationFunctions import *
 import csv
 import socket
 import struct
-import osx
+import os
 from collections import deque
 
 
