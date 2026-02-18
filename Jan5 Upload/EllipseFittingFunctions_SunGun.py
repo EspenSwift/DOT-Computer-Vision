@@ -308,7 +308,7 @@ def EllipseFromFrame(frame_bgr, prev_max_area):
     # Get gold mask
     gold_mask = get_gold_mask(frame_bgr, kernel_size=7, iterations=3)
 
-
+    outer_circle = None
     # Detect circle
     if prev_max_area < MIN_AREA_HOUGH_CIRCLE:
         outer_circle, crop_offset = detect_outer_circle(frame_bgr)
