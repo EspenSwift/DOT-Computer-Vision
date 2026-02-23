@@ -56,6 +56,87 @@ def predict_next_Tx_constant_velocity(prev_Tx_history):
     t_next = n + 1
     return m * t_next + b
 
+# ==========================================================
+#                 ROI TRACKER (LAR)
+# ==========================================================
+
+class ROITracker:
+    """
+    Tracks a square ROI around the last detected ellipse.
+    - Locks after N consecutive detections
+    - Expands on misses
+    - Resets to full-frame after too many misses
+    """
+    def __init__(self, frame_w, frame_h,
+                 lock_hits=2,
+                 max_misses=3,
+                 scale=2.5,
+                 min_size=180,
+                 max_size=900,
+                 expand_on_miss=1.25):
+        self.W = frame_w
+        self.H = frame_h
+        self.lock_hits = lock_hits
+        self.max_misses = max_misses
+        self.scale = scale
+        self.min_size = min_size
+        self.max_size = max_size
+        self.expand_on_miss = expand_on_miss
+
+        self.hits = 0
+        self.misses = 0
+        self.locked = False
+        self.roi = (0, 0, frame_w, frame_h)  # full frame to start
+
+    def _clamp_roi(self, x, y, s):
+        s = int(max(self.min_size, min(self.max_size, s)))
+        x = int(max(0, min(self.W - s, x)))
+        y = int(max(0, min(self.H - s, y)))
+        return (x, y, s, s)
+
+    def update(self, ellipse_full):
+        """
+        Update ROI using ellipse in FULL-FRAME coords.
+        If ellipse_full is None -> miss handling.
+        """
+        if ellipse_full is None:
+            self.misses += 1
+            self.hits = 0
+            if self.locked:
+                # expand ROI a bit to try to reacquire
+                x, y, w, h = self.roi
+                s = int(w * self.expand_on_miss)
+                cx = x + w // 2
+                cy = y + h // 2
+                self.roi = self._clamp_roi(cx - s // 2, cy - s // 2, s)
+
+                if self.misses >= self.max_misses:
+                    self.locked = False
+                    self.roi = (0, 0, self.W, self.H)  # reset
+            return self.roi, self.locked
+
+        # ellipse detected
+        self.misses = 0
+        self.hits += 1
+        if self.hits >= self.lock_hits:
+            self.locked = True
+
+        (cx, cy), (maj, minr), _ = ellipse_full
+        # build square ROI size from ellipse axis
+        s = int(self.scale * max(maj, minr))
+        self.roi = self._clamp_roi(int(cx - s // 2), int(cy - s // 2), s)
+        return self.roi, self.locked
+
+
+def shift_ellipse_to_full(ellipse_roi, roi_x, roi_y):
+    """
+    ellipse_roi is OpenCV ellipse tuple relative to ROI image.
+    Shift center back into full-frame coordinates.
+    """
+    if ellipse_roi is None:
+        return None
+    (cx, cy), axes, angle = ellipse_roi
+    return ((cx + roi_x, cy + roi_y), axes, angle)
 
 #======================================================
 #                 Traditional Ransac FUNCTION
