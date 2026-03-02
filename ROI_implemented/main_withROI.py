@@ -10,6 +10,11 @@ import struct
 import os
 from collections import deque
 
+#Gui Import for reference - not used in this script, but may be useful for future development of a live visualization tool
+import sys
+import argparse
+import subprocess
+
 
 
 ## IMPORTANT:
@@ -90,6 +95,27 @@ Pose_output = []  # store pose outputs
 #CHANGE ME
 base_dir = "/home/spot-vision/Documents/Capstone_CV_2025/"
 
+#CLI Arguements for optional GUI launch
+parser = argparse.ArgumentParser()
+parser.add_argument("--gui", action="store_true", help="Launch LIVE GUI (live_pose_gui.py).")
+parser.add_argument("--gui-path", default=None, help="Path to live_pose_gui.py (optional).")
+parser.add_argument("--gui-host", default="127.0.0.1", help="Host/IP where GUI is listening.")
+parser.add_argument("--gui-port", type=int, default=50006, help="UDP port for GUI telemetry.")
+args, _ = parser.parse_known_args()
+
+#Optional GUI Launch "--gui" - this is separate from the main processing loop, and just starts the GUI as a subprocess.
+if args.gui:
+    gui_path = args.gui_path
+    if gui_path is None:
+        gui_path = os.path.join(os.path.dirname(__file__), "live_pose_gui.py")
+
+    if os.path.exists(gui_path):
+        subprocess.Popen([sys.executable, gui_path])
+        time.sleep(0.5)  # let GUI bind socket
+        print("[INFO] Launched live_pose_gui.")
+    else:
+        print(f"[WARN] --gui passed but GUI script not found: {gui_path}")
+
 # Prompt user for test name
 test_name = input("Please enter the test name: ")
 write_videos = input("Do you want to write videos? (y/n): ").strip().lower() == 'y'
@@ -124,19 +150,24 @@ sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 # The second parameter is the port number to send data to, it is arbitrary but must match the Simulink receiver block
 server_address = ('192.168.1.110',50005 )
 
-
+# GUI telemetry destination (can be same machine or remote laptop)
+gui_address = (args.gui_host, args.gui_port)
 
 # ==========================================================
 #                 HELPER FUNCTIONS
 # ==========================================================
 
+#GUI TELEMETRY PACKET
 
+GUI_PKT_FMT = "<di" + "6f" + "6f" + "6f" + "f"
+# time_s (double), frame_idx (int32),
+# pose1(6 floats), pose2(6 floats), chosen(6 floats),
+# yaw_abs_deg (float)
 
-
-
-
-
-
+def yaw_abs_deg(nx, nz):
+    # Absolute yaw in degrees derived from normal vector components
+    ang = np.degrees(np.arctan2(nx, nz)) + 180.0
+    return float(ang % 360.0)
 
 
 
@@ -389,9 +420,46 @@ try:
             #print(theta_tc)
             Tx = chosen[0][0]/1000# Tx: distance between camera optical scenter and LAR center along x in the camera frame (m) - corresponds to y direction in relaive space
             Tz = chosen[0][2]/1000 # Tz: distance between camera optical center and LAR center along z in the camera frame (m) - corresponds to x direction in relative space
+           
+            
+            # SEND LIVE TELEMETRY TO GUI (UDP)
+            try:
+                # candidates are (center_mm, normal_unit) per PoseDeterminationFunctions output scaling :contentReference[oaicite:8]{index=8}
+                p1 = candidates[0]
+                p2 = candidates[1]
 
-            # Append to Pose output
-            Pose_output.append([prev_time-start_time, *candidates[0][0], *candidates[0][1], *candidates[1][0], *candidates[1][1], *chosen[0], *chosen[1], theta_tc])
+                # Pose blocks: [nx ny nz cx_mm cy_mm cz_mm]
+                p1_block = (float(p1[1][0]), float(p1[1][1]), float(p1[1][2]),
+                            float(p1[0][0]), float(p1[0][1]), float(p1[0][2]))
+                p2_block = (float(p2[1][0]), float(p2[1][1]), float(p2[1][2]),
+                            float(p2[0][0]), float(p2[0][1]), float(p2[0][2]))
+
+                nx = float(chosen[1][0])
+                ny = float(chosen[1][1])
+                nz = float(chosen[1][2])
+                cx_mm = float(chosen[0][0])
+                cy_mm = float(chosen[0][1])
+                cz_mm = float(chosen[0][2])
+
+                chosen_block = (nx, ny, nz, cx_mm, cy_mm, cz_mm)
+
+                # Absolute yaw (deg) from normal components (your new GUI metric)
+                yaw_deg = yaw_abs_deg(nx, nz)
+
+                # Time stamp and frame index
+                t_s = float(prev_time - start_time)
+                frame_idx = int(frames)
+
+                pkt = struct.pack(GUI_PKT_FMT, t_s, frame_idx,
+                                *p1_block, *p2_block, *chosen_block, float(yaw_deg))
+
+                sock.sendto(pkt, gui_address)
+
+            except Exception as e:
+                # Keep pipeline safe: GUI telemetry must never crash the CV loop.
+                pass
+                # Append to Pose output
+                Pose_output.append([prev_time-start_time, *candidates[0][0], *candidates[0][1], *candidates[1][0], *candidates[1][1], *chosen[0], *chosen[1], theta_tc])
         else:
             Pose_output.append([prev_time-start_time, *candidates[0][0], *candidates[0][1], *candidates[1][0], *candidates[1][1], 0,0,0, 0,0,0, 0])
             send_flag = 0
