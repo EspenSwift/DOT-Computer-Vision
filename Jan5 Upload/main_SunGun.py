@@ -1,3 +1,20 @@
+# ==========================================================
+# AUTHORS:
+# ==========================================================
+# James Makhlouf, Espen Swift, Ziad Sholook, Sorroush Siddiq
+
+# ==========================================================
+# PURPOSE:
+# This script captures video from the ZED camera, detects ellipses in the frames,
+# estimates the pose of the target based on the detected ellipse, and sends the pose data to Simulink.
+# It also saves the processed video with detected ellipses overlaid and writes pose data to a CSV file for later analysis.
+
+# Sun-Gun Condition Code
+# ==========================================================
+
+# ==========================================================
+# IMPORTS:
+# ==========================================================
 import cv2
 import numpy as np
 import pyzed.sl as sl
@@ -26,15 +43,6 @@ cv2.ocl.setUseOpenCL(True)
 
 
 
-# ==========================================================
-#                 USER PARAMETERS
-# ==========================================================
-
-##
-##
-##
-##
-##
 
 # ==========================================================
 #                 PHYSICAL PARAMETERS
@@ -43,14 +51,7 @@ cv2.ocl.setUseOpenCL(True)
 
 # Using this technique, only targeting the inner circle
 R_MM = 90.0 #mm
-MIN_CONTOUR_AREA = 1900
-MIN_CONTOUR_LENGTH = 50
-MIN_CONTOUR_POINTS = 50
 
-
-RANSAC_MAX_TRIALS = 200
-CONVERGENCE_TRIALS =90 
-RANSAC_INLIER_THRESHOLD = 5
 #R_OUTTER = 150.0 # mm, Real radius of the circular lAR
 #INNER_OUTTER_OFFSET = 70.0 # mm, distance between inner and outter circular faces
 
@@ -60,13 +61,18 @@ RANSAC_INLIER_THRESHOLD = 5
 #                 CAMERA PARAMETERS
 # ==========================================================
 
-FPS = 8
+FPS = 7 # set fps for ZED camera
 pixel_size_mm_zed = 0.002 # pixel size for ZED at pix/mm
 
 # ==========================================================
-#                 DATA WRITING OPTIONS
+#                 DATA SENDING OPTIONS
 # ==========================================================
+
 TARGET_HZ = 5  # Target frequency to write data to CSV and send to Simulink
+
+# ==========================================================
+#                 DATA WRITING
+# ==========================================================
 
 header = [
     "Time [s]",
@@ -77,17 +83,10 @@ header = [
     "True_Rx", "True_Ry", "True_Rz",
     "True_Tx", "True_Ty", "True_Tz", "True Rel Angle [rad]"
 ]
+# Store pose outputs
+Pose_output = []  
 
-Pose_output = []  # store pose outputs
-
-
-
-# ==========================================================
-#                 DATA WRITING
-# ==========================================================
-
-# Define Base Directory
-#CHANGE ME
+# Define Base Directory to save data
 base_dir = "/home/spot-vision/Documents/Capstone_CV_2025/"
 
 # Prompt user for test name
@@ -127,25 +126,18 @@ server_address = ('192.168.1.110',50005 )
 
 
 # ==========================================================
-#                 HELPER FUNCTIONS
-# ==========================================================
-
-
-
-
-
-
-
-
-
-
-
-# ==========================================================
 #                 START ZED CAMERA
 # ==========================================================
+
+# Access ZED camera and set parameters:
 init_params = sl.InitParameters()
-init_params.camera_resolution = sl.RESOLUTION.HD720  # Set resolution to HD720
-init_params.camera_fps = FPS  # set fps
+
+# Set resolution to HD720
+init_params.camera_resolution = sl.RESOLUTION.HD720  
+
+# set fps
+init_params.camera_fps = FPS  
+
 zed = sl.Camera()
 if zed.open(init_params) != sl.ERROR_CODE.SUCCESS:
     raise RuntimeError("Failed to open ZED camera. Check connection and SDK installation.")
@@ -154,9 +146,7 @@ if zed.open(init_params) != sl.ERROR_CODE.SUCCESS:
 
 # Disable auto exposure
 #UNCOMMENT TO CONTROL EXPOSURE MANUALLY
-
 # 40 exposure and works well with 50% intensity lighting
-
 zed.set_camera_settings(sl.VIDEO_SETTINGS.EXPOSURE, 40)   # 0–100
 zed.set_camera_settings(sl.VIDEO_SETTINGS.GAIN, 40)       # usually set with exposure
 zed.set_camera_settings(sl.VIDEO_SETTINGS.AEC_AGC, 0)     # disable auto exposure/gain
@@ -169,7 +159,6 @@ calib = cam_info.camera_configuration.calibration_parameters
 left = calib.left_cam
 
 # Build intrinsic matrix K
-
 K_left = np.array([
     [left.fx, 0.0, left.cx],
     [0.0, left.fy, left.cy],
@@ -178,19 +167,17 @@ K_left = np.array([
 print("Obtained left camera intrinsic matrix K:")
 print(K_left)
 
-# Setup runtime and Mat for frames
+# Setup runtime for frames
 runtime = sl.RuntimeParameters()
 frame_zed = sl.Mat()
-
-
 
 # ==========================================================
 #                 PROCESSING SETUP
 # ==========================================================
 
+# Initialize video writers
 writer = None
 raw_writer = None
-frame_count = 0
 
 
 # grab one frame to get size / FPS for writer
@@ -217,13 +204,22 @@ print(f"Frame size: {w}x{h}, FPS: {zed_fps}")
 #       MAIN LOOP - Ellipse Detection and Pose Estimation
 # ==========================================================
 
-# initialize EPOCH - right before we gegin grabbing frames for ellipse detection
+# initialize EPOCH - right before we begin grabbing frames for ellipse detection
 start_time = time.time()
+
+# Initialize frame count
 frames = 0
 
+# Initialize previous max area for ellipse filtering, previous time for timing control, and previous Tx for pose disambiguation
 prev_max_area = 0
+
+# Initialize previous time
 prev_time = 0
+
+# Initialize previous Tx as None - Tx is the component for pose disambiguation (direction) 
 prev_Tx = None
+
+# Store Tx values in a history deque for consistency-based pose disambiguation when slope is ambiguous (temporal-consistency-based disambiguation)
 prev_Tx_history = deque(maxlen=5)
 try:    
     while True:
@@ -278,7 +274,8 @@ try:
                 elif mean_slope < -0.02:
                     Tx_positive = True
                 else:
-                    Tx_positive = None   # slope too small = ambiguous
+                    Tx_positive = None   # slope too small = ambiguous or no panel lines detected
+                    print("Slope too small or no lines detected")
 
 
         # ---------------------------------------------------
@@ -347,7 +344,7 @@ try:
 
 
         elif ellipse is not None and Tx_positive is None:
-            # straight case (slope ambiguous)
+            # straight case (slope ambiguous or no panel lines detected)
             #print("Straight")
             Tz1 = candidates[0][1][2]
             Tz2 = candidates[1][1][2]
