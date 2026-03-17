@@ -220,7 +220,7 @@ def get_gold_mask(frame_bgr, kernel_size = 7, iterations = 3):
     clahe = cv2.createCLAHE(clipLimit=3, tileGridSize=(2,2))
     V_eq = clahe.apply(V)
     hsv_eq = cv2.merge([H,S,V_eq])
-    lower_gold = np.array([0, 33,37])
+    lower_gold = np.array([0, 20,37])
     upper_gold = np.array([57, 141, 255])
 
     mask_lab = cv2.inRange(hsv_eq, lower_gold, upper_gold)
