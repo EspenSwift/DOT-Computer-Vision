@@ -220,8 +220,8 @@ def get_gold_mask(frame_bgr, kernel_size = 7, iterations = 3):
     clahe = cv2.createCLAHE(clipLimit=3, tileGridSize=(2,2))
     V_eq = clahe.apply(V)
     hsv_eq = cv2.merge([H,S,V_eq])
-    lower_gold = np.array([0, 20,37])
-    upper_gold = np.array([57, 141, 255])
+    lower_gold = np.array([0, 15,1])
+    upper_gold = np.array([65, 141, 255])
 
     mask_lab = cv2.inRange(hsv_eq, lower_gold, upper_gold)
 
@@ -232,7 +232,7 @@ def get_gold_mask(frame_bgr, kernel_size = 7, iterations = 3):
         )
     morph_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, morph_kernel, iterations=1)
-    mask = cv2.bitwise_and(mask,mask_bgr)
+    #mask = cv2.bitwise_and(mask,mask_bgr)
     return mask
 
 #======================================================
@@ -306,7 +306,7 @@ def detect_panel_lines(frame):
 # ==========================================================
 def EllipseFromFrame(frame_bgr, prev_max_area):
     # Get gold mask
-    gold_mask = get_gold_mask(frame_bgr, kernel_size=7, iterations=3)
+    
 
     outer_circle = None
     # Detect circle
@@ -320,7 +320,10 @@ def EllipseFromFrame(frame_bgr, prev_max_area):
 
         cv2.circle(circle_mask, (cx, cy), r, 255, -1)
         # Apply mask
-        gold_mask = cv2.bitwise_and(gold_mask, circle_mask)
+        masked_frame = cv2.bitwise_and(frame_bgr, frame_bgr, mask=circle_mask)
+        gold_mask = get_gold_mask(masked_frame, kernel_size = 7, iterations=3)
+    else:
+        gold_mask = get_gold_mask(frame_bgr, kernel_size=7, iterations=3)
 
     # Currently fitting to gold mask
     gold_contours,_ = cv2.findContours(gold_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
