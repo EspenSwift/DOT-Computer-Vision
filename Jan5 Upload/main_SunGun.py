@@ -147,8 +147,8 @@ if zed.open(init_params) != sl.ERROR_CODE.SUCCESS:
 # Disable auto exposure
 #UNCOMMENT TO CONTROL EXPOSURE MANUALLY
 # 40 exposure and works well with 50% intensity lighting
-zed.set_camera_settings(sl.VIDEO_SETTINGS.EXPOSURE, 40)   # 0–100
-zed.set_camera_settings(sl.VIDEO_SETTINGS.GAIN, 40)       # usually set with exposure
+zed.set_camera_settings(sl.VIDEO_SETTINGS.EXPOSURE, 50)   # 0–100
+zed.set_camera_settings(sl.VIDEO_SETTINGS.GAIN, 50)       # usually set with exposure
 zed.set_camera_settings(sl.VIDEO_SETTINGS.AEC_AGC, 0)     # disable auto exposure/gain
 
 
