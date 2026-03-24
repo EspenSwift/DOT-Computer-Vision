@@ -148,7 +148,7 @@ if zed.open(init_params) != sl.ERROR_CODE.SUCCESS:
 #UNCOMMENT TO CONTROL EXPOSURE MANUALLY
 # 40 exposure and works well with 50% intensity lighting
 zed.set_camera_settings(sl.VIDEO_SETTINGS.EXPOSURE, 40)   # 0–100
-zed.set_camera_settings(sl.VIDEO_SETTINGS.GAIN, 40)      # usually set with exposure
+zed.set_camera_settings(sl.VIDEO_SETTINGS.GAIN, 30)      # usually set with exposure
 zed.set_camera_settings(sl.VIDEO_SETTINGS.AEC_AGC, 0)     # disable auto exposure/gain
 
 
@@ -236,7 +236,7 @@ try:
                     #new_gain = min(current_gain + 5, 100)  # increase gain as well, cap at 100
                     zed.set_camera_settings(sl.VIDEO_SETTINGS.EXPOSURE, new_exposure)
                     #zed.set_camera_settings(sl.VIDEO_SETTINGS.GAIN, new_gain)
-                    print(f"Increasing exposure from {current_exposure} to {new_exposure}")
+                    #print(f"Increasing exposure from {current_exposure} to {new_exposure}")
                 elif prev_mean_intensity > 160:
                     # decrease exposure to darken image
                     current_exposure = zed.get_camera_settings(sl.VIDEO_SETTINGS.EXPOSURE)[1]
@@ -245,9 +245,9 @@ try:
                     #new_gain = max(current_gain - 5, 5)  # decrease gain as well, floor at 5
                     zed.set_camera_settings(sl.VIDEO_SETTINGS.EXPOSURE, new_exposure)
                     #zed.set_camera_settings(sl.VIDEO_SETTINGS.GAIN, new_gain)
-                    print(f"Decreasing exposure from {current_exposure} to {new_exposure}")
-                else:
-                    print("Exposure is good, no adjustment needed.")
+                    #print(f"Decreasing exposure from {current_exposure} to {new_exposure}")
+                #else:
+                    #print("Exposure is good, no adjustment needed.")
             prev_mean_intensity = 0 # reset mean intensity for next frame
         if zed.grab(runtime) != sl.ERROR_CODE.SUCCESS:
             # skip if frame not ready
@@ -301,7 +301,7 @@ try:
                     Tx_positive = True
                 else:
                     Tx_positive = None   # slope too small = ambiguous or no panel lines detected
-                    print("Slope too small or no lines detected")
+                    #print("Slope too small or no lines detected")
 
 
         # ---------------------------------------------------
