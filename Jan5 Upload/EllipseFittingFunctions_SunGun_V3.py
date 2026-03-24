@@ -180,7 +180,7 @@ def detect_outer_circle(frame):
         minDist=200 // scale,
         param1=125,
         param2=30,
-        minRadius=80 // scale,
+        minRadius=40 // scale,
         maxRadius=300 // scale
     )
 
@@ -332,7 +332,7 @@ def EllipseFromFrame(frame_bgr, prev_max_area):
         else:
             avg_intensity = 0.0
 
-        print(f"Frame {frame_idx}: Avg Circle Intensity = {avg_intensity:.2f}")
+        #print(" Avg Circle Intensity = ", avg_intensity)
 
         # Apply mask
         masked_frame = cv2.bitwise_and(frame_bgr, frame_bgr, mask=circle_mask)
