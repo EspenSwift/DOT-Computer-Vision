@@ -232,19 +232,19 @@ try:
                     # increase exposure to brighten image
                     current_exposure = zed.get_camera_settings(sl.VIDEO_SETTINGS.EXPOSURE)[1]
                     new_exposure = min(current_exposure + 5, 100)  # increase by 5, cap at 100
-                    current_gain = zed.get_camera_settings(sl.VIDEO_SETTINGS.GAIN)[1]
-                    new_gain = min(current_gain + 5, 100)  # increase gain as well, cap at 100
+                    #current_gain = zed.get_camera_settings(sl.VIDEO_SETTINGS.GAIN)[1]
+                    #new_gain = min(current_gain + 5, 100)  # increase gain as well, cap at 100
                     zed.set_camera_settings(sl.VIDEO_SETTINGS.EXPOSURE, new_exposure)
-                    zed.set_camera_settings(sl.VIDEO_SETTINGS.GAIN, new_gain)
+                    #zed.set_camera_settings(sl.VIDEO_SETTINGS.GAIN, new_gain)
                     print(f"Increasing exposure from {current_exposure} to {new_exposure}")
                 elif prev_mean_intensity > 160:
                     # decrease exposure to darken image
                     current_exposure = zed.get_camera_settings(sl.VIDEO_SETTINGS.EXPOSURE)[1]
-                    current_gain = zed.get_camera_settings(sl.VIDEO_SETTINGS.GAIN)[1]
+                    #current_gain = zed.get_camera_settings(sl.VIDEO_SETTINGS.GAIN)[1]
                     new_exposure = max(current_exposure - 5, 5)  # decrease by 5, floor at 5
-                    new_gain = max(current_gain - 5, 5)  # decrease gain as well, floor at 5
+                    #new_gain = max(current_gain - 5, 5)  # decrease gain as well, floor at 5
                     zed.set_camera_settings(sl.VIDEO_SETTINGS.EXPOSURE, new_exposure)
-                    zed.set_camera_settings(sl.VIDEO_SETTINGS.GAIN, new_gain)
+                    #zed.set_camera_settings(sl.VIDEO_SETTINGS.GAIN, new_gain)
                     print(f"Decreasing exposure from {current_exposure} to {new_exposure}")
                 else:
                     print("Exposure is good, no adjustment needed.")
