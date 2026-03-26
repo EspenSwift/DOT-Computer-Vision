@@ -19,7 +19,7 @@ MIN_CONTOUR_AREA = 1000
 
 # ELLIPSE QUALITY PARAMETERS:
 MAX_AR = 1.4
-MIN_INLIER_FRAC = 0.5
+MIN_INLIER_FRAC = 0.6
 
 # HOUGH CIRCLE MINIMUM AREA THRESHOLD
 MIN_AREA_HOUGH_CIRCLE = 60000
@@ -35,27 +35,6 @@ MIN_AREA_HOUGH_CIRCLE = 60000
 # ==========================================================
 
 
-def predict_next_Tx_constant_velocity(prev_Tx_history):
-    """
-    Predict next Tx assuming constant velocity based on last N points.
-    Linear fit: Tx = m*t + b
-    """
-    n = len(prev_Tx_history)
-    if n == 0:
-        return 0
-    if n == 1:
-        return prev_Tx_history[0]  # can't estimate velocity
-    
-    # t = 1..n
-    t = np.arange(1, n+1)
-    Tx = np.array(prev_Tx_history)
-
-    # Fit a line
-    m, b = np.polyfit(t, Tx, 1)
-
-    # Predict next frame
-    t_next = n + 1
-    return m * t_next + b
 
 
 #======================================================
@@ -150,6 +129,61 @@ def ransac_fit_ellipse_traditional(points, max_trials, convergence_trials, inlie
     return ellipse_to_use, points[best_inliers], best_mse, std_dev, AR, inlier_frac
 
 
+##############################
+# DOUBLE RANSAC
+##############################
+def two_stage_ransac_ellipse(points, max_trials, convergence_trials, inlier_threshold):
+    import numpy as np
+    import cv2
+
+    # --- First pass ---
+    ellipse, inliers, mse, std_dev, AR, inlier_frac = ransac_fit_ellipse_traditional(
+        points, max_trials, convergence_trials, inlier_threshold
+    )
+
+    if ellipse is None:
+        return None, None, None, None, None, None
+
+    # --- Unpack ellipse ---
+    (cx, cy), (major_axis, minor_axis), angle_deg = ellipse
+    a, b = major_axis / 2, minor_axis / 2
+
+    angle = np.deg2rad(angle_deg)
+    cos_a, sin_a = np.cos(angle), np.sin(angle)
+
+    pts = np.asarray(points)
+    pts = np.asarray(points).reshape(-1, 2)
+    x = pts[:, 0] - cx
+    y = pts[:, 1] - cy
+
+    # Rotate into ellipse frame
+    xr = cos_a * x + sin_a * y
+    yr = -sin_a * x + cos_a * y
+
+    # --- Compute normalized radius ---
+    norm_r = np.sqrt((xr / a)**2 + (yr / b)**2)
+
+    # --- Compute pixel distance INSIDE ellipse ---
+    pixel_dist_inside = (1 - norm_r) * min(a, b)
+
+    # --- Keep points that are NOT deep inside ---
+    # i.e., remove points more than 5 px inside
+    keep_mask = ~( (norm_r < 1) & (pixel_dist_inside > 10) )
+
+    filtered_points = pts[keep_mask]
+
+    # Safety check
+    if len(filtered_points) < 5:
+        return ellipse, inliers, mse, std_dev, AR, inlier_frac
+
+    # --- Second pass ---
+    ellipse2, inliers2, mse2, std_dev2, AR2, inlier_frac2 = ransac_fit_ellipse_traditional(
+        filtered_points, max_trials, convergence_trials, inlier_threshold
+    )
+
+    return ellipse2, inliers2, mse2, std_dev2, AR2, inlier_frac2
+ 
+
 # ============================================================
 #  OUTER CIRCLE DETECTOR 
 # ============================================================
@@ -211,6 +245,13 @@ def detect_outer_circle(frame):
 
 def get_gold_mask(frame_bgr, kernel_size = 7, iterations = 3):
 
+    lower_YELLOW = np.array([0, 20, 20])
+    upper_YELLOW = np.array([41, 220, 220])
+
+    lower_BLUE = np.array([0, 10, 0])
+    upper_BLUE = np.array([100, 110, 180])
+
+
     frame_bgr = cv2.GaussianBlur(frame_bgr, (11,11), 0)
     mask_bgr = cv2.inRange(frame_bgr, (10, 10,10), (255, 255, 255))
    
@@ -220,13 +261,18 @@ def get_gold_mask(frame_bgr, kernel_size = 7, iterations = 3):
     clahe = cv2.createCLAHE(clipLimit=3, tileGridSize=(2,2))
     #V_eq = clahe.apply(V)
     hsv_eq = cv2.merge([H,S,V])
-    lower_gold = np.array([0, 5,1])
-    upper_gold = np.array([80, 141, 255])
 
-    mask_lab = cv2.inRange(hsv_eq, lower_gold, upper_gold)
+    
+    #lower_gold = np.array([0, 5,1])
+    #upper_gold = np.array([80, 141, 255])
 
+    mask_YELLOW = cv2.inRange(hsv_eq, lower_YELLOW, upper_YELLOW)
+    mask_BLUE = cv2.inRange(hsv_eq, lower_BLUE, upper_BLUE)
+
+    # SET THE MASK
+    mask = mask_YELLOW
     mask = cv2.morphologyEx(
-            mask_lab, cv2.MORPH_CLOSE,
+            mask, cv2.MORPH_CLOSE,
             cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size, kernel_size)),
             iterations=iterations
         )
@@ -337,7 +383,7 @@ def EllipseFromFrame(frame_bgr, prev_max_area):
         prev_max_area = 0
     
     if max_contour is not None:
-        ellipse, best_inliers, best_mse, std_dev, AR, inlier_frac = ransac_fit_ellipse_traditional(max_contour,RANSAC_MAX_TRIALS,CONVERGENCE_TRIALS,RANSAC_INLIER_THRESHOLD)
+        ellipse, best_inliers, best_mse, std_dev, AR, inlier_frac = two_stage_ransac_ellipse(max_contour,RANSAC_MAX_TRIALS,CONVERGENCE_TRIALS,RANSAC_INLIER_THRESHOLD)
 
         if ellipse is not None and (AR < MAX_AR) and inlier_frac > MIN_INLIER_FRAC:
             return ellipse, prev_max_area
