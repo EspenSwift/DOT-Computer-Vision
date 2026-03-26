@@ -356,8 +356,11 @@ def EllipseFromFrame(frame_bgr, prev_max_area):
 
     outer_circle = None
     # Detect circle
-    if prev_max_area < MIN_AREA_HOUGH_CIRCLE:
-        outer_circle, crop_offset = detect_outer_circle(frame_bgr)
+    outer_circle, crop_offset = detect_outer_circle(frame_bgr)
+    if prev_max_area > MIN_AREA_HOUGH_CIRCLE and outer_circle is not None:
+        cx, cy, r = map(int, outer_circle)   
+        r = int(r*1.2)
+        outer_circle = (cx, cy, r)
     if outer_circle is not None:
         cx, cy, r = map(int, outer_circle)       
         # Build circular mask
