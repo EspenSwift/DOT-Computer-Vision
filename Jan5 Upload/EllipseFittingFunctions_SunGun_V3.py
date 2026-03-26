@@ -10,7 +10,7 @@ import math
 
 # ==========================================================
 # --- RANSAC ellipse fitting parameters ---
-RANSAC_MAX_TRIALS = 250
+RANSAC_MAX_TRIALS = 100
 RANSAC_INLIER_THRESHOLD = 7
 CONVERGENCE_TRIALS = 90
 
@@ -104,7 +104,7 @@ def ransac_fit_ellipse_traditional(points, max_trials, convergence_trials, inlie
         inliers = abs_residuals < (inlier_threshold / max(a, b))
         num_inliers = np.sum(inliers)
 
-        # --- MSE across *all* points ---
+        # --- MSE across all points ---
         mse = np.mean(residuals ** 2)
 
         # --- Model scoring ---
@@ -160,7 +160,7 @@ def detect_outer_circle(frame):
     h, w = frame.shape[:2]
 
     # ----- Remove top 25% -----
-    crop_y_offset = int(h * 0.25)
+    crop_y_offset = int(h * 0.0)
     frame_crop = frame[crop_y_offset:, :]
 
     h2, w2 = frame_crop.shape[:2]
@@ -180,7 +180,7 @@ def detect_outer_circle(frame):
         minDist=200 // scale,
         param1=125,
         param2=30,
-        minRadius=40 // scale,
+        minRadius=25 // scale,
         maxRadius=300 // scale
     )
 
@@ -219,9 +219,9 @@ def get_gold_mask(frame_bgr, kernel_size = 7, iterations = 3):
 
     clahe = cv2.createCLAHE(clipLimit=3, tileGridSize=(2,2))
     V_eq = clahe.apply(V)
-    hsv_eq = cv2.merge([H,S,V_eq])
-    lower_gold = np.array([0, 15,1])
-    upper_gold = np.array([65, 141, 255])
+    hsv_eq = cv2.merge([H,S,V])
+    lower_gold = np.array([0, 5,1])
+    upper_gold = np.array([80, 141, 255])
 
     mask_lab = cv2.inRange(hsv_eq, lower_gold, upper_gold)
 
@@ -336,7 +336,7 @@ def EllipseFromFrame(frame_bgr, prev_max_area):
 
         # Apply mask
         masked_frame = cv2.bitwise_and(frame_bgr, frame_bgr, mask=circle_mask)
-        gold_mask = get_gold_mask(masked_frame, kernel_size = 7, iterations=3)
+        gold_mask = get_gold_mask(masked_frame, kernel_size = 9, iterations=3)
     else:
         gold_mask = get_gold_mask(frame_bgr, kernel_size=7, iterations=3)
         avg_intensity = 0
