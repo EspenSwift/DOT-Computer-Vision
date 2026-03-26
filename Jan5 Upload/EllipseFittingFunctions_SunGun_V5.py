@@ -10,9 +10,9 @@ import math
 
 # ==========================================================
 # --- RANSAC ellipse fitting parameters ---
-RANSAC_MAX_TRIALS = 90
+RANSAC_MAX_TRIALS = 100
 RANSAC_INLIER_THRESHOLD = 7
-CONVERGENCE_TRIALS = 50
+CONVERGENCE_TRIALS = 90
 
 # CONTOUR FITTING PARAMETERS
 MIN_CONTOUR_AREA = 1000
@@ -104,7 +104,7 @@ def ransac_fit_ellipse_traditional(points, max_trials, convergence_trials, inlie
         inliers = abs_residuals < (inlier_threshold / max(a, b))
         num_inliers = np.sum(inliers)
 
-        # --- MSE across *all* points ---
+        # --- MSE across all points ---
         mse = np.mean(residuals ** 2)
 
         # --- Model scoring ---
@@ -151,7 +151,7 @@ def ransac_fit_ellipse_traditional(points, max_trials, convergence_trials, inlie
 
 
 # ============================================================
-#  OUTER CIRCLE DETECTOR (TOP 25% REMOVED)
+#  OUTER CIRCLE DETECTOR 
 # ============================================================
 def detect_outer_circle(frame):
     """Detect only the outer circle, after removing the top 25%."""
