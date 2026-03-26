@@ -381,6 +381,7 @@ def EllipseFromFrame(frame_bgr, prev_max_area, prev_circle, used_prev_circle):
             cv2.circle(circle_mask, (cx, cy), r, 255, -1)
             # Apply mask
             masked_frame = cv2.bitwise_and(frame_bgr, frame_bgr, mask=circle_mask)
+            outer_circle = prev_circle
             used_prev_circle += 1
         else: 
             # If we have already used the previous circle for 3 frames or there is no previous circle, we just use the raw frame and reset the previous circle information
