@@ -19,10 +19,10 @@ MIN_CONTOUR_AREA = 1000
 
 # ELLIPSE QUALITY PARAMETERS:
 MAX_AR = 1.4
-MIN_INLIER_FRAC = 0.6
+MIN_INLIER_FRAC = 0.7
 
 # HOUGH CIRCLE MINIMUM AREA THRESHOLD
-MIN_AREA_HOUGH_CIRCLE = 60000
+MIN_AREA_HOUGH_CIRCLE = 150000
 
 
 
@@ -34,28 +34,6 @@ MIN_AREA_HOUGH_CIRCLE = 60000
 #                 HELPER FUNCTIONS:
 # ==========================================================
 
-
-def predict_next_Tx_constant_velocity(prev_Tx_history):
-    """
-    Predict next Tx assuming constant velocity based on last N points.
-    Linear fit: Tx = m*t + b
-    """
-    n = len(prev_Tx_history)
-    if n == 0:
-        return 0
-    if n == 1:
-        return prev_Tx_history[0]  # can't estimate velocity
-    
-    # t = 1..n
-    t = np.arange(1, n+1)
-    Tx = np.array(prev_Tx_history)
-
-    # Fit a line
-    m, b = np.polyfit(t, Tx, 1)
-
-    # Predict next frame
-    t_next = n + 1
-    return m * t_next + b
 
 
 #======================================================
@@ -207,7 +185,7 @@ def two_stage_ransac_ellipse(points, max_trials, convergence_trials, inlier_thre
 #  OUTER CIRCLE DETECTOR 
 # ============================================================
 def detect_outer_circle(frame):
-    """Detect only the outer circle, after removing the top 25%."""
+    """Detect only the outer circle"""
     scale = 2
     
     h, w = frame.shape[:2]
@@ -254,7 +232,7 @@ def detect_outer_circle(frame):
 
     # Shift back into original coordinates
     cy += crop_y_offset
-    r = int(r*.85)  # slightly shrink radius to be safely inside the actual circle
+    r = int(r)  # slightly shrink radius to be safely inside the actual circle
     return (float(cx), float(cy), float(r)), crop_y_offset
 
 
@@ -361,15 +339,27 @@ def detect_panel_lines(frame):
 #======================================================
 #                 ELLIPSE FROM FRAME
 # ==========================================================
-def EllipseFromFrame(frame_bgr, prev_max_area):
-    
-
+def EllipseFromFrame(frame_bgr, prev_max_area, prev_circle, used_prev_circle):
+    send_circle = True
+    ## STEP 1: HOUGH CIRCLE DETECTION TO FIND OUTER CIRCLE AND MASK
     outer_circle = None
-    # Detect circle
-    if prev_max_area < MIN_AREA_HOUGH_CIRCLE:
-        outer_circle, crop_offset = detect_outer_circle(frame_bgr)
+    outer_circle, crop_offset = detect_outer_circle(frame_bgr)
+
+    ## Check to see if we are close enough that we must increase Hough Radius
+    if prev_max_area > MIN_AREA_HOUGH_CIRCLE:
+        
+        if outer_circle is not None:
+  
+            cx, cy, r = map(int, outer_circle)   
+            prev_max_area = np.pi*r**2
+            r = int(r*1.2) # increasing it because we are at the point where the Hough circle is detecting the inner gold circle. 
+            
+            outer_circle = (cx, cy, r) # Repack outer circle
+
+    ## Determine if we detected an outer circle
     if outer_circle is not None:
-        cx, cy, r = map(int, outer_circle)       
+        cx, cy, r = map(int, outer_circle)  
+        prev_max_area = np.pi*r**2     
         # Build circular mask
         h, w = frame_bgr.shape[:2]
         circle_mask = np.zeros((h, w), dtype=np.uint8)
@@ -377,27 +367,53 @@ def EllipseFromFrame(frame_bgr, prev_max_area):
         cv2.circle(circle_mask, (cx, cy), r, 255, -1)
         # Apply mask
         masked_frame = cv2.bitwise_and(frame_bgr, frame_bgr, mask=circle_mask)
+        prev_circle = outer_circle
+        used_prev_circle = 0
+    ## IF we did not detect an outer circle
+    else:
+        if used_prev_circle<3 and prev_circle is not None:
+            cx, cy, r = map(int, prev_circle) 
+            prev_max_area = np.pi*r**2      
+            # Build circular mask
+            h, w = frame_bgr.shape[:2]
+            circle_mask = np.zeros((h, w), dtype=np.uint8)
+
+            cv2.circle(circle_mask, (cx, cy), r, 255, -1)
+            # Apply mask
+            masked_frame = cv2.bitwise_and(frame_bgr, frame_bgr, mask=circle_mask)
+            used_prev_circle += 1
+        else: 
+            # If we have already used the previous circle for 3 frames or there is no previous circle, we just use the raw frame and reset the previous circle information
+            masked_frame = frame_bgr.copy()
+            used_prev_circle = 0
+            prev_max_area = 0
+            prev_circle = None
+            send_circle = False
+
+    if send_circle:
         gold_mask = get_gold_mask(masked_frame, kernel_size = 9, iterations=3)
-    else:
-        gold_mask = get_gold_mask(frame_bgr, kernel_size=9, iterations=3)
+        # Currently fitting to gold mask
+        gold_contours,_ = cv2.findContours(gold_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
 
-    # Currently fitting to gold mask
-    gold_contours,_ = cv2.findContours(gold_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+        if gold_contours:
+            max_contour = max(gold_contours, key=cv2.contourArea)
+            
 
-    if gold_contours:
-        max_contour = max(gold_contours, key=cv2.contourArea)
-        prev_max_area = cv2.contourArea(max_contour)
-
-    else:
-        max_contour = None
-        prev_max_area = 0
-    
-    if max_contour is not None:
-        ellipse, best_inliers, best_mse, std_dev, AR, inlier_frac = two_stage_ransac_ellipse(max_contour,RANSAC_MAX_TRIALS,CONVERGENCE_TRIALS,RANSAC_INLIER_THRESHOLD)
-
-        if ellipse is not None and (AR < MAX_AR) and inlier_frac > MIN_INLIER_FRAC:
-            return ellipse, prev_max_area
         else:
-            return None, 0
+            max_contour = None
+            prev_max_area = 0
+        
+        if max_contour is not None:
+            ellipse, best_inliers, best_mse, std_dev, AR, inlier_frac = two_stage_ransac_ellipse(max_contour,RANSAC_MAX_TRIALS,CONVERGENCE_TRIALS,RANSAC_INLIER_THRESHOLD)
+
+            if ellipse is not None and (AR < MAX_AR) and inlier_frac > MIN_INLIER_FRAC:
+                
+                used_prev_circle = 0
+                prev_circle = outer_circle
+                return ellipse, prev_max_area, prev_circle, used_prev_circle
+            else:
+                return None, 0, prev_circle, used_prev_circle
+        else:
+            return None, 0, prev_circle, used_prev_circle
     else:
-        return None, 0
+        return None, 0, None, 0
