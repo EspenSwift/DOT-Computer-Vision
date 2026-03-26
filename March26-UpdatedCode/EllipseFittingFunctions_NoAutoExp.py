@@ -346,6 +346,7 @@ def EllipseFromFrame(frame_bgr, prev_max_area, prev_circle, used_prev_circle):
     outer_circle, crop_offset = detect_outer_circle(frame_bgr)
 
     ## Check to see if we are close enough that we must increase Hough Radius
+    #########################
     if prev_max_area > MIN_AREA_HOUGH_CIRCLE:
         
         if outer_circle is not None:
@@ -355,7 +356,9 @@ def EllipseFromFrame(frame_bgr, prev_max_area, prev_circle, used_prev_circle):
             r = int(r*1.2) # increasing it because we are at the point where the Hough circle is detecting the inner gold circle. 
             
             outer_circle = (cx, cy, r) # Repack outer circle
-
+    #########################
+    
+    #########################
     ## Determine if we detected an outer circle
     if outer_circle is not None:
         cx, cy, r = map(int, outer_circle)  
@@ -369,8 +372,11 @@ def EllipseFromFrame(frame_bgr, prev_max_area, prev_circle, used_prev_circle):
         masked_frame = cv2.bitwise_and(frame_bgr, frame_bgr, mask=circle_mask)
         prev_circle = outer_circle
         used_prev_circle = 0
+
+    #########################
     ## IF we did not detect an outer circle
     else:
+        # If we can use previous circle
         if used_prev_circle<3 and prev_circle is not None:
             cx, cy, r = map(int, prev_circle) 
             prev_max_area = np.pi*r**2      
@@ -383,6 +389,7 @@ def EllipseFromFrame(frame_bgr, prev_max_area, prev_circle, used_prev_circle):
             masked_frame = cv2.bitwise_and(frame_bgr, frame_bgr, mask=circle_mask)
             outer_circle = prev_circle
             used_prev_circle += 1
+        # if we cannot use previous circle 
         else: 
             # If we have already used the previous circle for 3 frames or there is no previous circle, we just use the raw frame and reset the previous circle information
             masked_frame = frame_bgr.copy()
@@ -390,7 +397,8 @@ def EllipseFromFrame(frame_bgr, prev_max_area, prev_circle, used_prev_circle):
             prev_max_area = 0
             prev_circle = None
             send_circle = False
-
+    # The only way that this isn't true is if a) we did not detect a circle AND we cannot use the previous circle
+    # Therefore at send_circle , if it is true, then for sure we have a masked frame
     if send_circle:
         gold_mask = get_gold_mask(masked_frame, kernel_size = 9, iterations=3)
         # Currently fitting to gold mask
@@ -402,19 +410,24 @@ def EllipseFromFrame(frame_bgr, prev_max_area, prev_circle, used_prev_circle):
 
         else:
             max_contour = None
+            # Reset previous max area since no contours were found
             prev_max_area = 0
         
         if max_contour is not None:
+            # Compute ellipse
             ellipse, best_inliers, best_mse, std_dev, AR, inlier_frac = two_stage_ransac_ellipse(max_contour,RANSAC_MAX_TRIALS,CONVERGENCE_TRIALS,RANSAC_INLIER_THRESHOLD)
-
+            
+            # If we found a good ellipse for this run:
             if ellipse is not None and (AR < MAX_AR) and inlier_frac > MIN_INLIER_FRAC:
-                
-                used_prev_circle = 0
-                prev_circle = outer_circle
+                prev_circle = outer_circle # Redefine prev_circle to whatever outer_circle we used for this ellipse
                 return ellipse, prev_max_area, prev_circle, used_prev_circle
             else:
+                # If we had a contour but the ellipse was bad
+                # Return no ellipse, 0 previous max area (since the ellipse failed), But still send prev_circle, as well as used_prev_circle counter
                 return None, 0, prev_circle, used_prev_circle
         else:
+            # If max contour is None (ie -> could not even get a contour 
+            # Return no ellipse, no area, but still send previous circle and used circle counter (which would be unchanged in this case
             return None, 0, prev_circle, used_prev_circle
     else:
         return None, 0, None, 0
