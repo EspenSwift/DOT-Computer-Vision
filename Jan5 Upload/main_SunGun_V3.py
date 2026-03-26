@@ -454,14 +454,16 @@ try:
 
 
             # This is temporary - senging only the first pose for testing
-            # Later, integrate with pose disabiguation logic to select correct pose, then send that one.
+            # Later, integrate with pose disambiguation logic to select correct pose, then send that one.
 
 
             # Round before sending
             Tz = round(Tz, 5)
             Tx = round(Tx, 5)
             theta_tc = round(theta_tc, 5)
-
+            # Sanity check - eliminate obviously wrong poses
+            if abs(Tz > 4) or abs(Tx)>4:
+                send_flag, Tz, Tx, theta_tc = 0,0,0,0
             # Send data 
             data = bytearray(struct.pack("ffff", send_flag, Tz, Tx, theta_tc))  # Tx, Tz, relative angle in radians # Add time later
             sock.sendto(data, server_address)
