@@ -159,6 +159,8 @@ zed.set_camera_settings(sl.VIDEO_SETTINGS.EXPOSURE, 35)   # 0–100
 zed.set_camera_settings(sl.VIDEO_SETTINGS.GAIN, 35)       # usually set with exposure
 zed.set_camera_settings(sl.VIDEO_SETTINGS.AEC_AGC, 0)     # disable auto exposure/gain
 
+# Slight warm tone
+zed.set_camera_settings(sl.VIDEO_SETTINGS.WHITEBALANCE_TEMPERATURE, 4300)
 
 
 # Get camera intrinsics 
@@ -187,6 +189,10 @@ frame_zed = sl.Mat()
 writer = None
 raw_writer = None
 
+
+# Stabilize
+for _ in range(10):
+    zed.grab(runtime)
 
 # grab one frame to get size / FPS for writer
 if zed.grab(runtime) == sl.ERROR_CODE.SUCCESS:
@@ -231,6 +237,7 @@ prev_Tx = None
 prev_mean_intensity = 0
 # Store Tx values in a history deque for consistency-based pose disambiguation when slope is ambiguous (temporal-consistency-based disambiguation)
 prev_Tx_history = deque(maxlen=5)
+prev_Tz_history = deque(maxlen=10)
 try:    
     while True:
         current_exposure = zed.get_camera_settings(sl.VIDEO_SETTINGS.EXPOSURE)[1]
@@ -279,7 +286,7 @@ try:
         frame_bgr = cv2.cvtColor(frame_bgra, cv2.COLOR_BGRA2BGR)
 
         # Calculate ellipse from current frame
-        ellipse, prev_max_area, prev_mean_intensity,inlier_frac = EllipseFromFrame(frame_bgr, prev_max_area)
+        ellipse, prev_max_area, prev_mean_intensity,inlier_frac = EllipseFromFrame(frame_bgr, prev_max_area,prev_Tz_history)
 
         if ellipse is not None:
             # Compute two pose candidates based on this ellipse
@@ -479,7 +486,9 @@ try:
 
             # Send data 
             data = bytearray(struct.pack("ffff", send_flag, Tz, Tx, theta_tc))  # Tx, Tz, relative angle in radians # Add time later
+            
             sock.sendto(data, server_address)
+            prev_Tz_history.append(Tz)
             #print(send_flag, round(Tz,3), round(Tx,3), round(theta_tc,3), round(inlier_frac,2),)
             print(f"Flag: {send_flag}\t\tX_tc: {round(Tz,3)}\t\tY_tc: {-round(Tx,3)}\t\t"f"Theta: {round(theta_tc,3)}\t\tInliers: {round(inlier_frac,2)}\t\tIntensity: {round(prev_mean_intensity,3)}\t\tExposure: {round(current_exposure,3)}")
 
