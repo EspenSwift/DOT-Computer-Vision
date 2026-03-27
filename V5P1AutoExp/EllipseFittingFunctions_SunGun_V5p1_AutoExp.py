@@ -10,6 +10,8 @@ import math
 
 # ==========================================================
 # --- RANSAC ellipse fitting parameters ---
+min_offset_for_two_stage_ransac = .7 #m if the two pose candidates are within this distance of each other, we will use a second stage of RANSAC to try to disambiguate based on consistency with previous poses
+
 RANSAC_MAX_TRIALS = 100
 RANSAC_INLIER_THRESHOLD = 7
 CONVERGENCE_TRIALS = 90
@@ -207,6 +209,19 @@ def detect_outer_circle(frame):
     med_blur = cv2.medianBlur(gray_blur, 5)
 
     # ---------------- OUTER HOUGH ----------------
+
+        # ---------------- OUTER HOUGH ----------------
+    circles = cv2.HoughCircles(
+        med_blur,
+        cv2.HOUGH_GRADIENT,
+        dp=1.1,
+        minDist=200 // scale,
+        param1=100,
+        param2=30,
+        minRadius=25 // scale,
+        maxRadius=300 // scale
+    )
+    '''
     circles = cv2.HoughCircles(
         med_blur,
         cv2.HOUGH_GRADIENT,
@@ -217,6 +232,7 @@ def detect_outer_circle(frame):
         minRadius=25 // scale,
         maxRadius=300 // scale
     )
+    '''
 
     if circles is None:
         return None, crop_y_offset
@@ -350,7 +366,11 @@ def detect_panel_lines(frame):
 #======================================================
 #                 ELLIPSE FROM FRAME
 # ==========================================================
-def EllipseFromFrame(frame_bgr, prev_max_area):
+def EllipseFromFrame(frame_bgr, prev_max_area, prev_Tz_history):
+    use_two_stage = False
+    mean_prev_Tx = np.mean(prev_Tz_history) if len(prev_Tz_history) > 0 else 0
+    if mean_prev_Tx < min_offset_for_two_stage_ransac:
+        use_two_stage = True    
     # Get gold mask
     
     # Initialize parameters for auto exposure
@@ -362,7 +382,7 @@ def EllipseFromFrame(frame_bgr, prev_max_area):
     outer_circle, crop_offset = detect_outer_circle(frame_bgr)
     if prev_max_area > MIN_AREA_HOUGH_CIRCLE and outer_circle is not None:
         cx, cy, r = map(int, outer_circle)   
-        r = int(r*1.2)
+        r = int(r*1.05)  # slightly expand radius to ensure we capture the whole region
         outer_circle = (cx, cy, r)
     if outer_circle is not None:
 
@@ -397,8 +417,13 @@ def EllipseFromFrame(frame_bgr, prev_max_area):
         prev_max_area = 0
     
     if max_contour is not None:
-        ellipse, best_inliers, best_mse, std_dev, AR, inlier_frac = ransac_fit_ellipse_traditional(max_contour,RANSAC_MAX_TRIALS,CONVERGENCE_TRIALS,RANSAC_INLIER_THRESHOLD)
+        if use_two_stage:
+            ellipse, best_inliers, best_mse, std_dev, AR, inlier_frac = two_stage_ransac_ellipse(max_contour,RANSAC_MAX_TRIALS,CONVERGENCE_TRIALS,RANSAC_INLIER_THRESHOLD)
+        if not use_two_stage:
+            ellipse, best_inliers, best_mse, std_dev, AR, inlier_frac = ransac_fit_ellipse_traditional(max_contour,RANSAC_MAX_TRIALS,CONVERGENCE_TRIALS,RANSAC_INLIER_THRESHOLD)
 
+
+            
         if ellipse is not None and (AR < MAX_AR) and inlier_frac > MIN_INLIER_FRAC:
             return ellipse, prev_max_area, avg_intensity, inlier_frac
         else:
