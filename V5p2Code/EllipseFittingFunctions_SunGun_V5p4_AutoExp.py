@@ -434,7 +434,7 @@ def EllipseFromFrame(frame_bgr, prev_max_area, prev_Tz_history):
         else:
             avg_intensity = 0.0
     if use_hough_circle is True and outer_circle is None:
-        return None, 0, avg_intensity, 0, None
+        return None, 0, avg_intensity, 0
     if max_contour is not None:
         if use_two_stage:
             ellipse, best_inliers, best_mse, std_dev, AR, inlier_frac = two_stage_ransac_ellipse(max_contour,RANSAC_MAX_TRIALS,CONVERGENCE_TRIALS,RANSAC_INLIER_THRESHOLD)
@@ -444,8 +444,8 @@ def EllipseFromFrame(frame_bgr, prev_max_area, prev_Tz_history):
 
             
         if ellipse is not None and (AR < MAX_AR) and inlier_frac > MIN_INLIER_FRAC:
-            return ellipse, prev_max_area, avg_intensity, inlier_frac, outer_circle
+            return ellipse, prev_max_area, avg_intensity, inlier_frac
         else:
-            return None, 0, avg_intensity, inlier_frac, outer_circle
+            return None, 0, avg_intensity, inlier_frac
     else:
-        return None, 0, avg_intensity, 0, outer_circle
+        return None, 0, avg_intensity, 0
